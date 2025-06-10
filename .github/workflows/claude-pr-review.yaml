@@ -57,8 +57,9 @@ jobs:
           echo "DEBUG: Attempting to download diff from $DIFF_URL..."
           # -L: 强制跟随重定向 (例如，从 github.com 重定向到 raw.githubusercontent.com)
           # -v: 详细模式，打印 curl 操作的详细信息，包括请求头、响应头、连接过程等（调试时非常有用）
-          # 2>&1 | tee curl_download_debug.log: 将标准输出和标准错误都重定向到 tee 命令，tee 将内容同时输出到屏幕和文件
-          curl  -f -H "Authorization: token $GH_TOKEN" "$DIFF_URL" > pr.diff 2>&1 | tee curl_download_debug.log
+          # > pr.diff: 将下载的内容（stdout）写入 pr.diff
+          # 2> curl_download_debug.log: 将 verbose 输出和错误（stderr）写入 curl_download_debug.log
+          curl -v -L -f -H "Authorization: token $GH_TOKEN" "$DIFF_URL" > pr.diff 2> curl_download_debug.log
 
           echo "DEBUG: Curl download command output (from curl_download_debug.log):"
           cat curl_download_debug.log || true # 打印 curl 详细日志
