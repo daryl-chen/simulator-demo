@@ -17,7 +17,7 @@ jobs:
           PR_NUMBER=${{ github.event.pull_request.number }}
           REPO=${{ github.repository }}
           GH_TOKEN=${{ secrets.GITHUB_TOKEN }}
-          echo $REPO 
+          echo "$REPO" 
           echo $PR_NUMBER
           curl -s -H "Authorization: token $GH_TOKEN" \
             https://api.github.com/repos/$REPO/pulls/$PR_NUMBER \
