@@ -133,27 +133,35 @@ jobs:
           fi
 
           # 调用 Claude API
+          # 移除 -f 参数，以便即使收到 HTTP 错误也能捕获并打印响应体
           # -sS: 静默模式但显示错误
-          # -f: 在 HTTP 错误时退出
-          RESPONSE=$(curl -sS -f https://api.anthropic.com/v1/messages \
+          RESPONSE_FULL=$(curl -sS https://api.anthropic.com/v1/messages \
             -H "x-api-key: $ANTHROPIC_API_KEY" \
             -H "anthropic-version: 2023-06-01" \
             -H "content-type: application/json" \
             -d "$JSON_PAYLOAD")
           
-          # 打印 Claude API 的原始响应
-          echo "DEBUG: Raw Claude API response:"
-          echo "$RESPONSE" | head -c 2000 || true
+          # 打印 Claude API 的原始响应，无论成功与否
+          echo "DEBUG: Raw Claude API response (full, up to 2000 chars):"
+          echo "$RESPONSE_FULL" | head -c 2000 || true
           echo ""
 
           # 将 Claude 的响应保存到文件
-          echo "$RESPONSE" > review_response.json
+          echo "$RESPONSE_FULL" > review_response.json
 
           # 检查 Claude API 响应是否包含错误字段
-          if echo "$RESPONSE" | jq -e '.error' > /dev/null; then
+          # 如果存在 .error.type 字段，则表示有错误
+          if echo "$RESPONSE_FULL" | jq -e '.error.type' > /dev/null; then
             echo "ERROR: Claude API returned an error:"
-            echo "$RESPONSE" | jq .error # 打印具体的错误信息
+            echo "$RESPONSE_FULL" | jq '.error | .type + ": " + .message' # 打印具体的错误类型和消息
             exit 1
+          fi
+
+          # 如果没有错误字段，但响应内容不符合预期 (例如，缺少 messages 或 content)
+          if ! echo "$RESPONSE_FULL" | jq -e '.content[0].text' > /dev/null; then
+              echo "ERROR: Claude API response did not contain expected content format (e.g., .content[0].text is missing). Response was:"
+              echo "$RESPONSE_FULL"
+              exit 1
           fi
 
           echo "Claude review completed."
