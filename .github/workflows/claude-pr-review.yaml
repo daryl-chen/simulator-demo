@@ -9,7 +9,6 @@ jobs:
     steps:
       - name: Checkout PR code
         uses: actions/checkout@v3
-
       - name: Fetch PR diff
         id: get_diff
         run: |
@@ -20,7 +19,6 @@ jobs:
               https://api github com/repos/$REPO/pulls/$PR_NUMBER \
               | jq -r  diff_url \
             | xargs curl -s -H "Authorization: token $GH_TOKEN" > pr diff
-
       - name: Send PR diff to Claude API
         id: claude_review
         env:
@@ -56,7 +54,6 @@ EOF
             # Save response for later use
             echo "$RESPONSE" > review_response json
             echo "Claude review completed "
-
       - name: Post comment to PR
         run: |
             REVIEW=$(jq -r ' content[0] text' review_response json)
