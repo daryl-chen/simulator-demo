@@ -33,7 +33,7 @@ jobs:
           DIFF_URL_JSON=$(curl -s -H "Authorization: token $GH_TOKEN" "https://api.github.com/repos/$REPO/pulls/$PR_NUMBER")
           
           echo "DEBUG: Raw API response for pull request:"
-          echo "$DIFF_URL_JSON" | head -c 2000 # 打印前2000字符，避免日志过长
+          echo "$DIFF_URL_JSON" | head -c 5000 # 打印前5000字符，避免日志过长
 
           DIFF_URL=$(echo "$DIFF_URL_JSON" | jq -r .diff_url)
 
