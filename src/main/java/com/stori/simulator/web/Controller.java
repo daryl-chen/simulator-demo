@@ -26,6 +26,8 @@ public class Controller {
         try {
             mqProducerService.sendMessage(msg);
             mqProducerService.sendMessage(msg);
+            mqProducerService.sendMessage(msg);
+            mqProducerService.sendMessage(msg);
         } catch (Exception e) {
             LOGGER.error("发送消息失败");
         }
