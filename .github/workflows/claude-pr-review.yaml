@@ -103,8 +103,11 @@ jobs:
           # 构建发送给 Claude API 的 JSON payload，使用 jq 确保正确转义
           # --arg 参数将 shell 变量作为 JSON 字符串传递，jq 会自动处理转义
           # 使用 `tonumber` 过滤器将字符串参数转换为数字类型
+          # IMPORTANT: Verify the correct model name from Anthropic API documentation or your account.
+          # The model name 'claude-3-7-sonnet-20250219' is restored based on your initial query.
+          # If this still results in 'not_found_error', please check Anthropic's official model list.
           JSON_PAYLOAD=$(jq -n \
-            --arg model "claude-3-sonnet-20240229" \
+            --arg model "claude-3-7-sonnet-20250219" \
             --arg max_tokens_str "1024" \
             --arg temperature_str "0.2" \
             --arg system_message "You are a senior software engineer helping to review GitHub pull requests." \
