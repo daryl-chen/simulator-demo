@@ -13,10 +13,10 @@ jobs:
       - name: Fetch PR diff
         id: get_diff
         run: |
-            PR_NUMBER=${{ github event pull_request number }}
+            PR_NUMBER=${{ github.event.pull_request.number }}
             REPO=${{ github repository }}
-            GH_TOKEN=${{ secrets GITHUB_TOKEN }}
-          curl -s -H "Authorization: token $GH_TOKEN" \
+            GH_TOKEN=${{ secrets.GITHUB_TOKEN }}
+            curl -s -H "Authorization: token $GH_TOKEN" \
               https://api github com/repos/$REPO/pulls/$PR_NUMBER \
               | jq -r  diff_url \
             | xargs curl -s -H "Authorization: token $GH_TOKEN" > pr diff
@@ -24,7 +24,7 @@ jobs:
       - name: Send PR diff to Claude API
         id: claude_review
         env:
-          ANTHROPIC_API_KEY: ${{ secrets ANTHROPIC_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
             # Truncate to avoid token overflow and escape double quotes
             DIFF=$(cat pr diff | head -c 12000 | sed 's/"/\\"/g')
@@ -59,10 +59,10 @@ EOF
 
       - name: Post comment to PR
         run: |
-            REVIEW=$(jq -r ' content[0] text' review_response json)
-            PR_NUMBER=${{ github event pull_request number }}
-            REPO=${{ github repository }}
-            GH_TOKEN=${{ secrets GITHUB_TOKEN }}
+            REVIEW=$(jq -r '.content[0].text' review_response.json)
+            PR_NUMBER=${{ github.event.pull_request.number }}
+            REPO=${{ github.repository }}
+            GH_TOKEN=${{ secrets.GITHUB_TOKEN }}
   
             # Construct comment payload
           COMMENT_PAYLOAD=$(jq -nc --arg body "$REVIEW" '{ body: $body }')
