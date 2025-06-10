@@ -85,38 +85,45 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
-          # 确保 DIFF 变量能正确获取到文件内容
-          # 截断 diff 内容以避免 token 溢出，并对双引号进行转义，以便在 JSON 中使用
-          DIFF=$(cat pr.diff | head -c 12000 | sed 's/"/\\"/g') 
+          # 读取完整的 diff 内容
+          DIFF_RAW=$(cat pr.diff)
 
-          echo "DEBUG: Content of DIFF variable (first 500 chars, after truncation and escaping):"
-          echo "$DIFF" | head -c 500 || true
+          # 截断 diff 内容以避免 token 溢出
+          # jq 会处理内部的字符串转义，所以这里不需要 sed 's/"/\\"/g'
+          DIFF_TRUNCATED=$(echo "$DIFF_RAW" | head -c 12000) 
+
+          echo "DEBUG: Content of DIFF_TRUNCATED variable (first 500 chars):"
+          echo "$DIFF_TRUNCATED" | head -c 500 || true
           echo ""
 
-          if [ -z "$DIFF" ]; then
-            echo "WARNING: DIFF variable is empty. Claude will likely receive an empty diff."
+          if [ -z "$DIFF_TRUNCATED" ]; then
+            echo "WARNING: DIFF_TRUNCATED variable is empty. Claude will likely receive an empty diff."
           fi
 
-          # 构建发送给 Claude API 的 JSON payload
-          # 使用 EOF 语法创建多行字符串，方便构建 JSON
-          JSON_PAYLOAD=$(cat <<EOF
-          {
-            "model": "claude-3-7-sonnet-20250219",
-            "max_tokens": 1024,
-            "temperature": 0.2,
-            "system": "You are a senior software engineer helping to review GitHub pull requests.",
-            "messages": [
-              {
-                "role": "user",
-                "content": "Please review the following code diff from a GitHub pull request and provide comments, suggestions, or potential improvements:\n\n$DIFF"
-              }
-            ]
-          }
-          EOF
+          # 构建发送给 Claude API 的 JSON payload，使用 jq 确保正确转义
+          # --arg 参数将 shell 变量作为 JSON 字符串传递，jq 会自动处理转义
+          JSON_PAYLOAD=$(jq -n \
+            --arg model "claude-3-sonnet-20240229" \
+            --arg max_tokens 1024 \
+            --arg temperature 0.2 \
+            --arg system_message "You are a senior software engineer helping to review GitHub pull requests." \
+            --arg diff_content "Please review the following code diff from a GitHub pull request and provide comments, suggestions, or potential improvements:\n\n${DIFF_TRUNCATED}" \
+            '{
+              "model": $model,
+              "max_tokens": $max_tokens,
+              "temperature": $temperature,
+              "system": $system_message,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": $diff_content
+                }
+              ]
+            }'
           )
 
-          echo "DEBUG: JSON_PAYLOAD sent to Claude API (first 500 chars):"
-          echo "$JSON_PAYLOAD" | head -c 500 || true
+          echo "DEBUG: JSON_PAYLOAD sent to Claude API (first 1000 chars):" # 增加日志长度
+          echo "$JSON_PAYLOAD" | head -c 1000 || true
           echo ""
 
           # 确保 ANTHROPIC_API_KEY 环境变量已设置
