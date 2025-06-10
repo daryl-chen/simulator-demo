@@ -10,81 +10,61 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout PR code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
       - name: Fetch PR diff
         id: get_diff
-        run: >
-          PR_NUMBER=${{ github event pull_request number }}
-
-          REPO=${{ github repository }}
-
-          GH_TOKEN=${{ secrets GITHUB_TOKEN }}
-
-          curl -s -H "Authorization: token $GH_TOKEN"  https://api github com/repos/$REPO/pulls/$PR_NUMBER   | jq -r  diff_url    | xargs curl -s -H "Authorization: token $GH_TOKEN" > pr diff
+        run: |
+          PR_NUMBER=${{ github.event.pull_request.number }}
+          REPO=${{ github.repository }}
+          GH_TOKEN=${{ secrets.GITHUB_TOKEN }}
+          curl -s -H "Authorization: token $GH_TOKEN" \
+            https://api.github.com/repos/$REPO/pulls/$PR_NUMBER \
+            | jq -r .diff_url \
+            | xargs curl -s -H "Authorization: token $GH_TOKEN" > pr.diff
       - name: Send PR diff to Claude API
         id: claude_review
         env:
-          ANTHROPIC_API_KEY: ${{ secrets ANTHROPIC_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: >
-          # Truncate to avoid token overflow and escape double quotes
-
-          DIFF=$(cat pr diff | head -c 12000 | sed 's/"/\\"/g')
-
-
-          # Construct JSON payload for Claude API request
+          DIFF=$(cat pr.diff | head -c 12000 | sed 's/"/\\"/g') # Truncate to avoid
+          token overflow
 
           JSON_PAYLOAD=$(cat <<EOF
 
           {
-
-          "model": "claude-3-7-sonnet-20250219",
-
-          "max_tokens": 1024,
-
-          "temperature": 0 2,
-
-          "system": "You are a senior software engineer helping to review GitHub pull requests ",
-
-          "messages": [
+            "model": "claude-3-7-sonnet-20250219",
+            "max_tokens": 1024,
+            "temperature": 0.2,
+            "system": "You are a senior software engineer helping to review GitHub pull requests.",
+            "messages": [
               {
-                  "role": "user",
-                  "content": "Please review the following code diff from a GitHub pull request and provide comments, suggestions, or potential improvements:\\n\\n$DIFF"
-                              }
+                "role": "user",
+                "content": "Please review the following code diff from a GitHub pull request and provide comments, suggestions, or potential improvements:\n\n$DIFF"
+              }
             ]
           }
 
+          EOF
+
           )
 
-
-          # Send request to Anthropic API
-
-          RESPONSE=$(curl -s https://api anthropic com/v1/messages \
-
-          -H "x-api-key: $ANTHROPIC_API_KEY" \
-
-          -H "anthropic-version: 2023-06-01" \
-
-          -H "content-type: application/json" \
+          RESPONSE=$(curl -s https://api.anthropic.com/v1/messages \
+            -H "x-api-key: $ANTHROPIC_API_KEY" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "content-type: application/json" \
             -d "$JSON_PAYLOAD")
+          echo "$RESPONSE" > review_response.json
 
-          # Save response for later use
-
-          echo "$RESPONSE" > review_response json
-
-          echo "Claude review completed "
+          echo "Claude review completed."
       - name: Post comment to PR
         run: |
-          REVIEW=$(jq -r ' content[0] text' review_response json)
-          PR_NUMBER=${{ github event pull_request number }}
-          REPO=${{ github repository }}
-          GH_TOKEN=${{ secrets GITHUB_TOKEN }}
-
-          # Construct comment payload
+          REVIEW=$(jq -r '.content[0].text' review_response.json)
+          PR_NUMBER=${{ github.event.pull_request.number }}
+          REPO=${{ github.repository }}
+          GH_TOKEN=${{ secrets.GITHUB_TOKEN }}
           COMMENT_PAYLOAD=$(jq -nc --arg body "$REVIEW" '{ body: $body }')
-
-          # Post comment to GitHub PR
           curl -s -X POST \
-          -H "Authorization: token $GH_TOKEN" \
-          -H "Content-Type: application/json" \
+            -H "Authorization: token $GH_TOKEN" \
+            -H "Content-Type: application/json" \
             -d "$COMMENT_PAYLOAD" \
-            https://api github com/repos/$REPO/issues/$PR_NUMBER/comments
+            https://api.github.com/repos/$REPO/issues/$PR_NUMBER/comments
