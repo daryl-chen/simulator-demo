@@ -19,7 +19,7 @@ jobs:
           GH_TOKEN=${{ secrets.GITHUB_TOKEN }}
           echo "$REPO" 
           echo $PR_NUMBER
-          curl -s -H "Authorization: token $GH_TOKEN" \
+          curl -H "Authorization: token $GH_TOKEN" \
             https://api.github.com/repos/$REPO/pulls/$PR_NUMBER \
             | jq -r .diff_url \
             | xargs curl -s -H "Authorization: token $GH_TOKEN"  > pr.diff
