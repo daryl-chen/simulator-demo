@@ -29,9 +29,10 @@ jobs:
           set -eo pipefail
 
           # 1. 获取 diff_url
-          DIFF_URL_JSON=$(curl -sS -f -H "Authorization: token $GH_TOKEN" "[https://api.github.com/repos/$REPO/pulls/$PR_NUMBER](https://api.github.com/repos/$REPO/pulls/$PR_NUMBER)")
+          # 修正这里：移除多余的 Markdown 链接格式 `[]()`
+          DIFF_URL_JSON=$(curl -sS -f -H "Authorization: token $GH_TOKEN" "https://api.github.com/repos/$REPO/pulls/$PR_NUMBER")
           
-          DIFF_URL=$(echo "$DIFF_URL_JSON" | jq -r .diff_url) # 修正这里：确保从 DIFF_URL_JSON 解析
+          DIFF_URL=$(echo "$DIFF_URL_JSON" | jq -r .diff_url)
 
           if [ -z "$DIFF_URL" ] || [ "$DIFF_URL" == "null" ]; then
             echo "ERROR: Failed to get diff_url or it was null. Review GitHub API response."
@@ -122,7 +123,7 @@ jobs:
             exit 1
           fi
 
-          RESPONSE_FULL=$(curl https://api.anthropic.com/v1/messages \
+          RESPONSE_FULL=$(curl [https://api.anthropic.com/v1/messages](https://api.anthropic.com/v1/messages) \
             -H "x-api-key: $ANTHROPIC_API_KEY" \
             -H "anthropic-version: 2023-06-01" \
             -H "content-type: application/json" \
