@@ -29,7 +29,7 @@ jobs:
           set -eo pipefail
 
           # 1. 获取 diff_url
-          DIFF_URL_JSON=$(curl -sS -f -H "Authorization: token $GH_TOKEN" "https://api.github.com/repos/$REPO/pulls/$PR_NUMBER")
+          DIFF_URL_JSON=$(curl -sS -f -H "Authorization: token $GH_TOKEN" "[https://api.github.com/repos/$REPO/pulls/$PR_NUMBER](https://api.github.com/repos/$REPO/pulls/$PR_NUMBER)")
           
           DIFF_URL=$(echo "$DIFF_URL_JSON" | jq -r .diff_url) # 修正这里：确保从 DIFF_URL_JSON 解析
 
@@ -71,27 +71,30 @@ jobs:
             --arg model "claude-3-7-sonnet-20250219" \
             --arg max_tokens_str "8192" \
             --arg temperature_str "0.2" \
-            --arg system_message "你是一位专业的 AI 代码评审员，专注于为 GitHub Pull Request 提供类似 GitHub Copilot 的高质量、可操作的审查。你的反馈应清晰、结构化，并以 **JSON 格式**提供。请严格遵守 JSON 结构和 `suggested_code` 中的 Markdown ```suggestion` 格式，以确保在 GitHub UI 中可接受。你的目标是识别潜在的错误、改进、最佳实践违规、性能瓶颈和安全问题。请确保你的 JSON 结果是完整的且可解析的。" \
+            --arg system_message "你是一位专业的 AI 代码评审员，专注于为 GitHub Pull Request 提供类似 GitHub Copilot 的高质量、可操作的审查。你的反馈应清晰、结构化，并以 **JSON 格式**严格提供。**务必使用 GitHub `suggestion` Markdown 格式**来提供代码修复建议。你的目标是识别潜在的错误、改进、最佳实践违规、性能瓶颈和安全问题。请确保你的 JSON 结果是完整的且可解析的。" \
             --arg diff_content "这是一个 GitHub Pull Request 的代码差异。请对它进行全面审查，并以 **JSON 格式**提供详细、可操作的反馈。你的响应应包含以下顶级键：
               
               1.  \`summary\` (string): 本次 PR 的内容总结、目的和供其他评审人员关注的 1-2 个关键点。
+              
               2.  \`low_confidence_issues\` (array of objects):
                   * \`file\` (string): 相关的相对文件路径（例如：`src/main/java/com/example/MyClass.java`）。
                   * \`line\` (number, optional): 问题的起始行号（在修改后的文件中）。
-                  * \`description\` (string): 对问题的描述，解释你为什么怀疑它，以及需要进一步确认的原因。
+                  * \`description\` (string): 对问题的描述，解释你为什么怀疑它，指出潜在的风险或需要进一步人工确认的地方。
                   * \`context_code\` (string, optional): 相关代码片段，用 Markdown 代码块包裹。
+              
               3.  \`high_confidence_fixes\` (array of objects):
                   * \`file\` (string): 相关的相对文件路径（例如：`src/main/java/com/example/MyClass.java`）。
-                  * \`line\` (number): 建议修改的起始行号。**此行号必须是你的建议所针对的代码在 PR **修改后文件** 中**实际被修改或添加**的行的精确起始行号。如果该行未在 PR               差异中被标记为添加、删除或修改，则 GitHub 将无法关联此评论。**
+                  * \`line\` (number): 建议修改的起始行号。**此行号至关重要：它必须是你的建议所针对的代码在 PR **修改后文件** 中**实际被修改或添加**的行的精确起始行号。如果该行未在               PR 差异中被标记为添加、删除或修改，则 GitHub 将无法关联此评论。**
                   * \`description\` (string): 确认的问题的简洁描述。
-                  * \`suggested_code\` (string): 包含修复建议的 Markdown 代码块。**必须使用 ```suggestion` 格式**，例如：
+                  * \`suggested_code\` (string): 包含修复建议的 Markdown 代码块。**你必须使用 ```suggestion` 格式**，例如：
                       \`\`\`
                       ```suggestion
-                      // 这是建议的修改代码
-                      新的代码行;
+                      - // 这是原来的代码行
+                      + // 这是建议修改后的代码行
                       ```
                       \`\`\`
-                      请确保此代码块内容准确无误，可以直接在 GitHub UI 中点击“Accept suggestion”来应用。
+                      请确保此代码块内容准确无误，代表了该行（或多行）的完整修改，可以直接在 GitHub UI 中点击“Accept suggestion”来应用。如果有多行修改，请将所有原行用 `-`               前缀，所有新行用 `+` 前缀。
+              
               4.  \`other_suggestions\` (string, optional): 其他非关键但有益的通用改进建议。
               
               请务必严格遵守 JSON 结构和 `suggested_code` 的 Markdown 格式。请避免在 `suggested_code` 中包含额外的换行符，除非它是代码的一部分。
