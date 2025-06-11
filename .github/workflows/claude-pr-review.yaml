@@ -113,7 +113,7 @@ jobs:
           # 构建完整的 JSON payload 并写入临时文件
           jq -n \
             --arg model "claude-3-7-sonnet-20250219" \
-            --arg max_tokens_str "30000" \
+            --arg max_tokens_str "100000" \
             --arg temperature_str "0.2" \
             --arg system_message "你是一位专业的 AI 代码评审员，专注于为 GitHub Pull Request 提供类似 GitHub Copilot 的高质量、可操作的审查。你的反馈应清晰、结构化，并以 **JSON 格式**严格提供。**务必使用 GitHub `suggestion` Markdown 格式**来提供代码修复建议。你的目标是识别潜在的错误、改进、最佳实践违规、性能瓶颈和安全问题。请确保你的 JSON 结果是完整的且可解析的。" \
             --arg diff_content_from_file "$USER_MESSAGE_CONTENT" \
