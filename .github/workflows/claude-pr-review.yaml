@@ -145,9 +145,27 @@ Code Diff:\n\n${DIFF_TRUNCATED}" \
           
           COMMENT_PAYLOAD=$(jq -nc --arg body "$REVIEW" '{ body: $body }')
           
-          curl -s -X POST \
+          echo "Attempting to post comment to PR #$PR_NUMBER..."
+          echo "Comment payload (first 500 chars):"
+          echo "$COMMENT_PAYLOAD" | head -c 500 || true
+          echo ""
+
+          # 移除 -s (silent) 参数，以便在出错时能看到 curl 的详细输出
+          # 增加 -v (verbose) 参数，提供更详细的 HTTP 请求和响应信息
+          RESPONSE_STATUS=$(curl -v -X POST \
             -H "Authorization: token $GH_TOKEN" \
             -H "Content-Type: application/json" \
             -d "$COMMENT_PAYLOAD" \
-            https://api.github.com/repos/$REPO/issues/$PR_NUMBER/comments
-          echo "PR comment posted."
+            https://api.github.com/repos/$REPO/issues/$PR_NUMBER/comments 2>&1) # 重定向 stderr 到 stdout
+
+          echo "GitHub API response for posting comment:"
+          echo "$RESPONSE_STATUS"
+
+          # 检查 HTTP 状态码是否成功 (例如 200, 201, 202)
+          # 使用 grep 检查 curl -v 输出中的 HTTP 状态码
+          if echo "$RESPONSE_STATUS" | grep -q "HTTP/.* 20[0-2]"; then
+            echo "PR comment posted successfully."
+          else
+            echo "ERROR: Failed to post PR comment. Check the GitHub API response above for details."
+            exit 1
+          fi
