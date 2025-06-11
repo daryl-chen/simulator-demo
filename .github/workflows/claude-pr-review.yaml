@@ -53,7 +53,8 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
-          # Ensure all lines below are consistently indented with 2 additional spaces
+          # The following lines are sensitive to YAML indentation.
+          # Ensure they are consistently indented with 2 additional spaces
           # relative to the 'run: |' line.
           DIFF_RAW=$(cat pr.diff)
           DIFF_TRUNCATED=$(echo "$DIFF_RAW" | head -c 12000) 
@@ -64,6 +65,8 @@ jobs:
 
           # 构建发送给 Claude API 的 JSON payload
           # IMPORTANT: 请确保 'claude-3-7-sonnet-20250219' 是 Anthropic 官方支持且您的账户可用的模型名称。
+          # 提示词被更新，以要求 Claude 以 JSON 格式返回结果，并明确定义每个字段，特别是 suggested_code 的格式。
+          # 增加 max_tokens 以减少截断的可能性。
           JSON_PAYLOAD=$(jq -n \
             --arg model "claude-3-7-sonnet-20250219" \
             --arg max_tokens_str "8192" \
@@ -79,7 +82,7 @@ jobs:
                   * \`context_code\` (string, optional): 相关代码片段，用 Markdown 代码块包裹。
               3.  \`high_confidence_fixes\` (array of objects):
                   * \`file\` (string): 相关的相对文件路径（例如：`src/main/java/com/example/MyClass.java`）。
-                  * \`line\` (number): 建议修改的起始行号（在修改后的文件中）。**此行号必须是你的建议所针对的代码在 PR **修改后文件** 中的精确起始行号。**
+                  * \`line\` (number): 建议修改的起始行号。**此行号必须是你的建议所针对的代码在 PR **修改后文件** 中**实际被修改或添加**的行的精确起始行号。如果该行未在 PR               差异中被标记为添加、删除或修改，则 GitHub 将无法关联此评论。**
                   * \`description\` (string): 确认的问题的简洁描述。
                   * \`suggested_code\` (string): 包含修复建议的 Markdown 代码块。**必须使用 ```suggestion` 格式**，例如：
                       \`\`\`
