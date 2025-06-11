@@ -113,7 +113,7 @@ jobs:
                   "content": $diff_content
                 }
               ]
-            }' | curl -sS [https://api.anthropic.com/v1/messages](https://api.anthropic.com/v1/messages) \
+            }' | curl -sS https://api.anthropic.com/v1/messages \
             -H "x-api-key: $ANTHROPIC_API_KEY" \
             -H "anthropic-version: 2023-06-01" \
             -H "content-type: application/json" \
@@ -122,6 +122,8 @@ jobs:
           if [ -z "$ANTHROPIC_API_KEY" ]; then
             echo "ERROR: ANTHROPIC_API_KEY is not set. Cannot call Claude API."
             exit 1
+          CURL_RESPONSE_CODE=$(curl -s -o /dev/null -w "%{http_code}" https://api.anthropic.com/v1/messages)
+          echo "DEBUG: Claude API HTTP status code: $CURL_RESPONSE_CODE"
           fi
 
           # 确保 review_response.json 已经生成，并且是有效的 JSON
