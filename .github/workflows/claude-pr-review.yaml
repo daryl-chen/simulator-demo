@@ -74,7 +74,7 @@ jobs:
           # 移除 JSON_PAYLOAD 变量，直接将 jq 的输出传递给 curl -d @-
           jq -n \
             --arg model "claude-3-7-sonnet-20250219" \
-            --arg max_tokens_str "8192" \
+            --arg max_tokens_str "20000" \
             --arg temperature_str "0.2" \
             --arg system_message "你是一位专业的 AI 代码评审员，专注于为 GitHub Pull Request 提供类似 GitHub Copilot 的高质量、可操作的审查。你的反馈应清晰、结构化，并以 **JSON 格式**严格提供。**务必使用 GitHub `suggestion` Markdown 格式**来提供代码修复建议。你的目标是识别潜在的错误、改进、最佳实践违规、性能瓶颈和安全问题。请确保你的 JSON 结果是完整的且可解析的。" \
             --arg diff_content "这是一个 GitHub Pull Request 的代码差异。请对它进行全面审查，并以 **JSON 格式**提供详细、可操作的反馈。你的响应应包含以下顶级键：
@@ -124,7 +124,7 @@ jobs:
                   "content": $diff_content
                 }
               ]
-            }' | curl -sS https://api.anthropic.com/v1/messages \
+            }' | curl -sS [https://api.anthropic.com/v1/messages](https://api.anthropic.com/v1/messages) \
             -H "x-api-key: $ANTHROPIC_API_KEY" \
             -H "anthropic-version: 2023-06-01" \
             -H "content-type: application/json" \
