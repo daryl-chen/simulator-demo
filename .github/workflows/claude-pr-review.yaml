@@ -158,7 +158,7 @@ Code Diff:\n\n${DIFF_TRUNCATED}" \
             -d "$COMMENT_PAYLOAD" \
             https://api.github.com/repos/$REPO/issues/$PR_NUMBER/comments 2>&1) # 重定向 stderr 到 stdout
 
-          echo "GitHub API response for posting comment:"
+          echo "GitHub API response for posting comment:" 
           echo "$RESPONSE_STATUS"
 
           # 检查 HTTP 状态码是否成功 (例如 200, 201, 202)
