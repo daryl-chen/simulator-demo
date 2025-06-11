@@ -105,8 +105,8 @@ jobs:
             ```diff
             ${DIFF_TRUNCATED}
             ```
-            EOF
-            )
+          EOF
+          )
           # 将用户消息内容写入临时文件
           echo "$USER_MESSAGE_CONTENT" > user_message_content.txt
 
