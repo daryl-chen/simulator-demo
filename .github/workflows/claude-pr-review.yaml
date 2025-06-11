@@ -59,137 +59,137 @@ jobs:
           
           # 创建用户提示文件，避免Shell解析问题
           cat > user_prompt.txt << 'EOT'
-这是一个 GitHub Pull Request 的代码差异。请对它进行全面审查，并以 **JSON 格式**提供详细、可操作的反馈。你的响应应包含以下顶级键：
-
-1.  `summary` (string): 本次 PR 的内容总结、目的和供其他评审人员关注的 1-2 个关键点。
-
-2.  `low_confidence_issues` (array of objects):
-    * `file` (string): 相关的相对文件路径。
-    * `line` (number, optional): 问题的起始行号（在修改后的文件中）。
-    * `description` (string): 对问题的描述，解释你为什么怀疑它，指出潜在的风险或需要进一步人工确认的地方。
-    * `context_code` (string, optional): 相关的代码片段，仅用 **Markdown 代码块**包裹 (例如 ```go 或 ```javascript)，不带 `suggestion` 标签，因为它不会被 GitHub 自动识别为可接受的建议。
-
-3.  `high_confidence_fixes` (array of objects):
-    * `file` (string): 相关的相对文件路径。
-    * `line` (number): 建议修改的起始行号。**此行号至关重要：它必须是你的建议所针对的代码在 PR **修改后文件** 中**实际被修改、添加或删除**的行的精确起始行号。**如果该行在 PR 差异中没有被标记为添加、删除或修改，GitHub 将无法在此处放置行内评论。**
-    * `description` (string): 确认的问题的简洁描述。
-    * `suggested_code` (string): 包含修复建议的 Markdown 代码块。**你必须严格使用 ```suggestion 格式**，例如：
-        ```
-        ```suggestion
-        - // 这是原来的代码行，请务必包含在内
-        - // 这是如果修改涉及多行，原来的第二行
-        + // 这是建议修改后的新代码行，请务必包含在内
-        + // 这是如果修改涉及多行，建议添加的第二行
-        ```
-        ```
-        **特别注意：**
-        * 如果建议是删除一行，则只包含 `-` 开头的该行。
-        * 如果建议是添加一行，则只包含 `+` 开头的该行。
-        * 如果建议是修改一行，则包含 `-` 开头的原始行和 `+` 开头的修改后的行。
-        * 如果建议修改多行，请确保 `suggested_code` 包含所有受影响的行，用 `-` 和 `+` 明确标记。
-        * 请确保此代码块内容准确无误，代表了该行（或多行）的完整修改，可以直接在 GitHub UI 中点击"Accept suggestion"来应用。
-
-4.  `other_suggestions` (string, optional): 其他非关键但有益的通用改进建议。
-
-请务必严格遵守 JSON 结构和 `suggested_code` 的 Markdown 格式。请避免在 `suggested_code` 中包含额外的换行符，除非它是代码的一部分。
-
-代码差异：
-```diff
-EOT
-          
-          # 添加差异内容和结束标记
-          cat diff_content.txt >> user_prompt.txt
-          echo -e "\n\`\`\`" >> user_prompt.txt
-          
-          echo "User prompt prepared successfully"
-
-      - name: Call Claude API with Python
-        id: call_claude
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: |
-          if [ -z "$ANTHROPIC_API_KEY" ]; then
-            echo "::error::ANTHROPIC_API_KEY is not set"
-            exit 1
-          fi
-          
-          # 使用Python处理API调用，更可靠地处理JSON和转义
-          python3 -c '
-import json
-import os
-import requests
-from pathlib import Path
-
-# 读取用户提示
-with open("user_prompt.txt", "r") as f:
-    user_prompt = f.read()
-
-# 构建API请求
-headers = {
-    "x-api-key": os.environ["ANTHROPIC_API_KEY"],
-    "anthropic-version": "2023-06-01",
-    "content-type": "application/json"
-}
-
-data = {
-    "model": "claude-3-sonnet-20240229",
-    "max_tokens": 15000,
-    "temperature": 0.2,
-    "system": "你是一位专业的 AI 代码评审员，专注于为 GitHub Pull Request 提供类似 GitHub Copilot 的高质量、可操作的审查。你的反馈应清晰、结构化，并以 **JSON 格式**严格提供。**务必使用 GitHub `suggestion` Markdown 格式**来提供代码修复建议。你的目标是识别潜在的错误、改进、最佳实践违规、性能瓶颈和安全问题。请确保你的 JSON 结果是完整的且可解析的。",
-    "messages": [
-        {
-            "role": "user",
-            "content": user_prompt
-        }
-    ]
-}
-
-# 发送请求
-print("Sending request to Claude API...")
-response = requests.post("https://api.anthropic.com/v1/messages", headers=headers, json=data)
-
-# 检查状态码
-print(f"API response status code: {response.status_code}")
-if response.status_code != 200:
-    print(f"Error response: {response.text}")
-    exit(1)
-
-# 保存整个响应
-with open("claude_response.json", "w") as f:
-    f.write(response.text)
-
-# 提取并保存内容
-response_data = response.json()
-if "content" in response_data and len(response_data["content"]) > 0:
-    review_text = response_data["content"][0]["text"]
-    with open("claude_review.txt", "w") as f:
-        f.write(review_text)
-    print(f"Review saved successfully ({len(review_text)} chars)")
-else:
-    print("No content found in response")
-    exit(1)
-
-# 尝试提取JSON
-import re
-json_match = re.search(r"```json\s*(.+?)```", review_text, re.DOTALL)
-if json_match:
-    json_text = json_match.group(1).strip()
-else:
-    json_text = review_text.strip()
-
-try:
-    # 验证JSON是否有效
-    parsed_json = json.loads(json_text)
-    with open("extracted_json.txt", "w") as f:
-        json.dump(parsed_json, f, indent=2)
-    print("JSON extracted and validated successfully")
-except Exception as e:
-    print(f"Error parsing JSON: {e}")
-    print("Raw content received:")
-    print(json_text[:500])
-    exit(1)
-'
-
+            这是一个 GitHub Pull Request 的代码差异。请对它进行全面审查，并以 **JSON 格式**提供详细、可操作的反馈。你的响应应包含以下顶级键：
+            
+            1.  `summary` (string): 本次 PR 的内容总结、目的和供其他评审人员关注的 1-2 个关键点。
+            
+            2.  `low_confidence_issues` (array of objects):
+                * `file` (string): 相关的相对文件路径。
+                * `line` (number, optional): 问题的起始行号（在修改后的文件中）。
+                * `description` (string): 对问题的描述，解释你为什么怀疑它，指出潜在的风险或需要进一步人工确认的地方。
+                * `context_code` (string, optional): 相关的代码片段，仅用 **Markdown 代码块**包裹 (例如 ```go 或 ```javascript)，不带 `suggestion` 标签，因为它不会被 GitHub 自动识别为可接受的建议。
+            
+            3.  `high_confidence_fixes` (array of objects):
+                * `file` (string): 相关的相对文件路径。
+                * `line` (number): 建议修改的起始行号。**此行号至关重要：它必须是你的建议所针对的代码在 PR **修改后文件** 中**实际被修改、添加或删除**的行的精确起始行号。**如果该行在 PR 差异中没有被标记为添加、删除或修改，GitHub 将无法在此处放置行内评论。**
+                * `description` (string): 确认的问题的简洁描述。
+                * `suggested_code` (string): 包含修复建议的 Markdown 代码块。**你必须严格使用 ```suggestion 格式**，例如：
+                    ```
+                    ```suggestion
+                    - // 这是原来的代码行，请务必包含在内
+                    - // 这是如果修改涉及多行，原来的第二行
+                    + // 这是建议修改后的新代码行，请务必包含在内
+                    + // 这是如果修改涉及多行，建议添加的第二行
+                    ```
+                    ```
+                    **特别注意：**
+                    * 如果建议是删除一行，则只包含 `-` 开头的该行。
+                    * 如果建议是添加一行，则只包含 `+` 开头的该行。
+                    * 如果建议是修改一行，则包含 `-` 开头的原始行和 `+` 开头的修改后的行。
+                    * 如果建议修改多行，请确保 `suggested_code` 包含所有受影响的行，用 `-` 和 `+` 明确标记。
+                    * 请确保此代码块内容准确无误，代表了该行（或多行）的完整修改，可以直接在 GitHub UI 中点击"Accept suggestion"来应用。
+            
+            4.  `other_suggestions` (string, optional): 其他非关键但有益的通用改进建议。
+            
+            请务必严格遵守 JSON 结构和 `suggested_code` 的 Markdown 格式。请避免在 `suggested_code` 中包含额外的换行符，除非它是代码的一部分。
+            
+            代码差异：
+            ```diff
+            EOT
+                      
+                      # 添加差异内容和结束标记
+                      cat diff_content.txt >> user_prompt.txt
+                      echo -e "\n\`\`\`" >> user_prompt.txt
+                      
+                      echo "User prompt prepared successfully"
+            
+                  - name: Call Claude API with Python
+                    id: call_claude
+                    env:
+                      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+                    run: |
+                      if [ -z "$ANTHROPIC_API_KEY" ]; then
+                        echo "::error::ANTHROPIC_API_KEY is not set"
+                        exit 1
+                      fi
+                      
+                      # 使用Python处理API调用，更可靠地处理JSON和转义
+                      python3 -c '
+            import json
+            import os
+            import requests
+            from pathlib import Path
+            
+            # 读取用户提示
+            with open("user_prompt.txt", "r") as f:
+                user_prompt = f.read()
+            
+            # 构建API请求
+            headers = {
+                "x-api-key": os.environ["ANTHROPIC_API_KEY"],
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json"
+            }
+            
+            data = {
+                "model": "claude-3-sonnet-20240229",
+                "max_tokens": 15000,
+                "temperature": 0.2,
+                "system": "你是一位专业的 AI 代码评审员，专注于为 GitHub Pull Request 提供类似 GitHub Copilot 的高质量、可操作的审查。你的反馈应清晰、结构化，并以 **JSON 格式**严格提供。**务必使用 GitHub `suggestion` Markdown             格式**来提供代码修复建议。你的目标是识别潜在的错误、改进、最佳实践违规、性能瓶颈和安全问题。请确保你的 JSON 结果是完整的且可解析的。",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": user_prompt
+                    }
+                ]
+            }
+            
+            # 发送请求
+            print("Sending request to Claude API...")
+            response = requests.post("https://api.anthropic.com/v1/messages", headers=headers, json=data)
+            
+            # 检查状态码
+            print(f"API response status code: {response.status_code}")
+            if response.status_code != 200:
+                print(f"Error response: {response.text}")
+                exit(1)
+            
+            # 保存整个响应
+            with open("claude_response.json", "w") as f:
+                f.write(response.text)
+            
+            # 提取并保存内容
+            response_data = response.json()
+            if "content" in response_data and len(response_data["content"]) > 0:
+                review_text = response_data["content"][0]["text"]
+                with open("claude_review.txt", "w") as f:
+                    f.write(review_text)
+                print(f"Review saved successfully ({len(review_text)} chars)")
+            else:
+                print("No content found in response")
+                exit(1)
+            
+            # 尝试提取JSON
+            import re
+            json_match = re.search(r"```json\s*(.+?)```", review_text, re.DOTALL)
+            if json_match:
+                json_text = json_match.group(1).strip()
+            else:
+                json_text = review_text.strip()
+            
+            try:
+                # 验证JSON是否有效
+                parsed_json = json.loads(json_text)
+                with open("extracted_json.txt", "w") as f:
+                    json.dump(parsed_json, f, indent=2)
+                print("JSON extracted and validated successfully")
+            except Exception as e:
+                print(f"Error parsing JSON: {e}")
+                print("Raw content received:")
+                print(json_text[:500])
+                exit(1)
+            '
+            
       - name: Post PR comments
         uses: actions/github-script@v6
         with:
