@@ -53,9 +53,6 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
-          # The following lines are sensitive to YAML indentation.
-          # Ensure they are consistently indented with 2 additional spaces
-          # relative to the 'run: |' line.
           DIFF_RAW=$(cat pr.diff)
           DIFF_TRUNCATED=$(echo "$DIFF_RAW" | head -c 12000) 
 
@@ -67,77 +64,83 @@ jobs:
 
           if [ -z "$DIFF_TRUNCATED" ]; then
             echo "WARNING: Diff content is empty. Claude will likely receive an empty diff."
+            # 如果 diff 为空，可以考虑直接退出或者返回一个简单的评论
+            # exit 0 
           fi
 
-          # 将 JSON payload 定义在一个单行字符串中，以避免 Shell 解析问题
-          # 变量名加上 _TEMPLATE 后缀，表示这是一个用于 jq 的模板字符串
-          JSON_PAYLOAD_TEMPLATE='
-          {
-            "model": $model,
-            "max_tokens": ($max_tokens_str | tonumber),
-            "temperature": ($temperature_str | tonumber),
-            "system": $system_message,
-            "messages": [
-              {
-                "role": "user",
-                "content": $diff_content
-              }
-            ]
-          }
-          '
-          # 构建发送给 Claude API 的 JSON payload，并直接通过管道传递给 curl
-          # 移除 JSON_PAYLOAD 变量，直接将 jq 的输出传递给 curl -d @-
-          echo "$JSON_PAYLOAD_TEMPLATE" | jq -n \
+          # 将用户消息内容写入临时文件
+          USER_MESSAGE_CONTENT=$(cat <<'EOF'
+            
+            这是一个 GitHub Pull Request 的代码差异。请对它进行全面审查，并以 **JSON 格式**提供详细、可操作的反馈。你的响应应包含以下顶级键：
+            
+            1.  `summary` (string): 本次 PR 的内容总结、目的和供其他评审人员关注的 1-2 个关键点。
+            
+            2.  `low_confidence_issues` (array of objects):
+                * `file` (string): 相关的相对文件路径（例如：`src/main/java/com/example/MyClass.java`）。
+                * `line` (number, optional): 问题的起始行号（在修改后的文件中）。
+                * `description` (string): 对问题的描述，解释你为什么怀疑它，指出潜在的风险或需要进一步人工确认的地方。
+                * `context_code` (string, optional): 相关代码片段，用 Markdown 代码块包裹。
+            
+            3.  `high_confidence_fixes` (array of objects):
+                * `file` (string): 相关的相对文件路径（例如：`src/main/java/com/example/MyClass.java`）。
+                * `line` (number): 建议修改的起始行号。**此行号至关重要：它必须是你的建议所针对的代码在 PR **修改后文件** 中**实际被修改或添加**的行的精确起始行号。如果该行未在 PR             差异中被标记为添加、删除或修改，则 GitHub 将无法关联此评论。**
+                * `description` (string): 确认的问题的简洁描述。
+                * `suggested_code` (string): 包含修复建议的 Markdown 代码块。**你必须使用 ```suggestion` 格式**，例如：
+                    ```suggestion
+                    - // 这是原来的代码行
+                    + // 这是建议修改后的代码行
+                    ```
+                    **特别注意：**
+                    * 如果建议是删除一行，则只包含 `-` 开头的该行。
+                    * 如果建议是添加一行，则只包含 `+` 开头的该行。
+                    * 如果建议是修改一行，则包含 `-` 开头的原始行和 `+` 开头的修改后的行。
+                    * 如果建议修改多行，请确保 `suggested_code` 包含所有受影响的行，用 `-` 和 `+` 明确标记。
+                    * 请确保此代码块内容准确无误，代表了该行（或多行）的完整修改，可以直接在 GitHub UI 中点击“Accept suggestion”来应用。
+            
+            4.  `other_suggestions` (string, optional): 其他非关键但有益的通用改进建议。
+            
+            请务必严格遵守 JSON 结构和 `suggested_code` 的 Markdown 格式。请避免在 `suggested_code` 中包含额外的换行符，除非它是代码的一部分。
+            
+            代码差异：
+            ```diff
+            ${DIFF_TRUNCATED}
+            ```
+            EOF
+            )
+          # 将用户消息内容写入临时文件
+          echo "$USER_MESSAGE_CONTENT" > user_message_content.txt
+
+          # 构建完整的 JSON payload 并写入临时文件
+          jq -n \
             --arg model "claude-3-7-sonnet-20250219" \
             --arg max_tokens_str "15000" \
             --arg temperature_str "0.2" \
             --arg system_message "你是一位专业的 AI 代码评审员，专注于为 GitHub Pull Request 提供类似 GitHub Copilot 的高质量、可操作的审查。你的反馈应清晰、结构化，并以 **JSON 格式**严格提供。**务必使用 GitHub `suggestion` Markdown 格式**来提供代码修复建议。你的目标是识别潜在的错误、改进、最佳实践违规、性能瓶颈和安全问题。请确保你的 JSON 结果是完整的且可解析的。" \
-            --arg diff_content "这是一个 GitHub Pull Request 的代码差异。请对它进行全面审查，并以 **JSON 格式**提供详细、可操作的反馈。你的响应应包含以下顶级键：
-              
-              1.  \`summary\` (string): 本次 PR 的内容总结、目的和供其他评审人员关注的 1-2 个关键点。
-              
-              2.  \`low_confidence_issues\` (array of objects):
-                  * \`file\` (string): 相关的相对文件路径（例如：`src/main/java/com/example/MyClass.java`）。
-                  * \`line\` (number, optional): 问题的起始行号（在修改后的文件中）。
-                  * \`description\` (string): 对问题的描述，解释你为什么怀疑它，指出潜在的风险或需要进一步人工确认的地方。
-                  * \`context_code\` (string, optional): 相关代码片段，用 Markdown 代码块包裹。
-              
-              3.  \`high_confidence_fixes\` (array of objects):
-                  * \`file\` (string): 相关的相对文件路径（例如：`src/main/java/com/example/MyClass.java`）。
-                  * \`line\` (number): 建议修改的起始行号。**此行号至关重要：它必须是你的建议所针对的代码在 PR **修改后文件** 中**实际被修改或添加**的行的精确起始行号。如果该行未在 PR               差异中被标记为添加、删除或修改，则 GitHub 将无法关联此评论。**
-                  * \`description\` (string): 确认的问题的简洁描述。
-                  * \`suggested_code\` (string): 包含修复建议的 Markdown 代码块。**你必须使用 ```suggestion` 格式**，例如：
-                      \`\`\`
-                      ```suggestion
-                      - // 这是原来的代码行
-                      + // 这是建议修改后的代码行
-                      ```
-                      \`\`\`
-                      **特别注意：**
-                      * 如果建议是删除一行，则只包含 `-` 开头的该行。
-                      * 如果建议是添加一行，则只包含 `+` 开头的该行。
-                      * 如果建议是修改一行，则包含 `-` 开头的原始行和 `+` 开头的修改后的行。
-                      * 如果建议修改多行，请确保 `suggested_code` 包含所有受影响的行，用 `-` 和 `+` 明确标记。
-                      * 请确保此代码块内容准确无误，代表了该行（或多行）的完整修改，可以直接在 GitHub UI 中点击“Accept suggestion”来应用。
-              
-              4.  \`other_suggestions\` (string, optional): 其他非关键但有益的通用改进建议。
-              
-              请务必严格遵守 JSON 结构和 `suggested_code` 的 Markdown 格式。请避免在 `suggested_code` 中包含额外的换行符，除非它是代码的一部分。
-              
-              代码差异：
-              ```diff
-              ${DIFF_TRUNCATED}
-              ```" \
-            "$JSON_PAYLOAD_TEMPLATE" | curl -sS https://api.anthropic.com/v1/messages \
-            -H "x-api-key: $ANTHROPIC_API_KEY" \
-            -H "anthropic-version: 2023-06-01" \
-            -H "content-type: application/json" \
-            -d @- > review_response.json # -d @- 表示从标准输入读取数据
+            --arg diff_content_from_file "$USER_MESSAGE_CONTENT" \
+            '{
+              "model": $model,
+              "max_tokens": ($max_tokens_str | tonumber),
+              "temperature": ($temperature_str | tonumber),
+              "system": $system_message,
+              "messages": [
+                {
+                  "role": "user",
+                  "content": $diff_content_from_file
+                }
+              ]
+            }' > claude_request_payload.json
 
           if [ -z "$ANTHROPIC_API_KEY" ]; then
             echo "ERROR: ANTHROPIC_API_KEY is not set. Cannot call Claude API."
             exit 1
           fi 
+
+          # 使用 curl 从文件读取 payload
+          curl -sS https://api.anthropic.com/v1/messages \
+            -H "x-api-key: $ANTHROPIC_API_KEY" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "content-type: application/json" \
+            -d @claude_request_payload.json > review_response.json
 
           # 确保 review_response.json 已经生成，并且是有效的 JSON
           if ! [ -s review_response.json ] || ! jq -e '.' review_response.json > /dev/null; then
