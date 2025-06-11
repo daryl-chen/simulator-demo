@@ -68,8 +68,19 @@ jobs:
             --arg model "claude-3-7-sonnet-20250219" \
             --arg max_tokens_str "1024" \
             --arg temperature_str "0.2" \
-            --arg system_message "You are a senior software engineer helping to review GitHub pull requests." \
-            --arg diff_content "Please review the following code diff from a GitHub pull request and provide comments, suggestions, or potential improvements:\n\n${DIFF_TRUNCATED}" \
+            --arg system_message "You are an expert software engineer specializing in thorough and actionable code reviews for GitHub pull requests. Your goal is to provide concise, constructive, and highly relevant feedback, similar to a skilled human reviewer or an advanced AI assistant like GitHub Copilot's review feature. Focus on code quality, potential issues, best practices, and opportunities for improvement." \
+            --arg diff_content "Here is a code diff from a GitHub pull request. Please perform a comprehensive code review focusing on the following aspects:
+
+1.  **Correctness & Logic:** Identify any potential bugs, logical errors, or edge cases that might be overlooked.
+2.  **Readability & Clarity:** Suggest improvements for code clarity, comments, and overall understanding.
+3.  **Maintainability & Design:** Point out any areas that could be refactored for better long-term maintainability, scalability, or adherence to design principles.
+4.  **Best Practices & Standards:** Check for adherence to common coding standards, design patterns, and idiomatic language usage.
+5.  **Performance & Efficiency:** Highlight any potential performance bottlenecks or opportunities for optimization.
+6.  **Security:** Identify any security vulnerabilities or unsafe practices.
+
+Provide your feedback in a clear, concise, and actionable manner. If possible, offer concrete code suggestions or examples. Prioritize the most critical issues. Aim for a review that is helpful, educational, and easy to understand for the developer.
+
+Code Diff:\n\n${DIFF_TRUNCATED}" \
             '{
               "model": $model,
               "max_tokens": ($max_tokens_str | tonumber),
@@ -91,7 +102,6 @@ jobs:
           fi
 
           # 调用 Claude API
-          # 移除 -sS 参数，让 curl 默认显示错误，但仍不会显示进度条
           RESPONSE_FULL=$(curl https://api.anthropic.com/v1/messages \
             -H "x-api-key: $ANTHROPIC_API_KEY" \
             -H "anthropic-version: 2023-06-01" \
