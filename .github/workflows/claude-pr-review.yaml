@@ -28,7 +28,7 @@ jobs:
 
           echo "Fetching PR diff for PR #$PR_NUMBER in $REPO..."
 
-          # 直接获取PR差异
+          # Directly fetch PR diff
           curl -sSL -H "Authorization: Bearer $GH_TOKEN" \
                -H "Accept: application/vnd.github.v3.diff" \
                "https://api.github.com/repos/$REPO/pulls/$PR_NUMBER" > pr.diff
@@ -43,21 +43,21 @@ jobs:
       - name: Prepare Claude request
         id: prepare_request
         run: |
-          # 读取PR差异
+          # Read PR diff
           DIFF_CONTENT=$(cat pr.diff)
           
-          # 限制差异大小
+          # Limit diff size
           MAX_DIFF_SIZE=50000
           if [ ${#DIFF_CONTENT} -gt $MAX_DIFF_SIZE ]; then
             echo "Truncating diff from ${#DIFF_CONTENT} to $MAX_DIFF_SIZE chars"
             DIFF_CONTENT="${DIFF_CONTENT:0:$MAX_DIFF_SIZE}"
           fi
           
-          # 保存差异内容到文件
+          # Save diff content to file
           echo "$DIFF_CONTENT" > diff_content.txt
           echo "Diff saved to diff_content.txt ($(wc -c < diff_content.txt) bytes)"
           
-          # 创建用户提示文件，避免Shell解析问题
+          # Create user prompt file, avoiding shell parsing issues
           cat > user_prompt.txt << 'EOT'
             这是一个 GitHub Pull Request 的代码差异。请对它进行全面审查，并以 **JSON 格式**提供详细、可操作的反馈。你的响应应包含以下顶级键：
             
@@ -74,13 +74,11 @@ jobs:
                 * `line` (number): 建议修改的起始行号。**此行号至关重要：它必须是你的建议所针对的代码在 PR **修改后文件** 中**实际被修改、添加或删除**的行的精确起始行号。**如果该行在 PR 差异中没有被标记为添加、删除或修改，GitHub 将无法在此处放置行内评论。**
                 * `description` (string): 确认的问题的简洁描述。
                 * `suggested_code` (string): 包含修复建议的 Markdown 代码块。**你必须严格使用 ```suggestion 格式**，例如：
-                    ```
                     ```suggestion
                     - // 这是原来的代码行，请务必包含在内
                     - // 这是如果修改涉及多行，原来的第二行
                     + // 这是建议修改后的新代码行，请务必包含在内
                     + // 这是如果修改涉及多行，建议添加的第二行
-                    ```
                     ```
                     **特别注意：**
                     * 如果建议是删除一行，则只包含 `-` 开头的该行。
@@ -95,36 +93,36 @@ jobs:
             
             代码差异：
             ```diff
-            EOT
-                      
-                      # 添加差异内容和结束标记
-                      cat diff_content.txt >> user_prompt.txt
-                      echo -e "\n\`\`\`" >> user_prompt.txt
-                      
-                      echo "User prompt prepared successfully"
-            
-                  - name: Call Claude API with Python
-                    id: call_claude
-                    env:
-                      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-                    run: |
-                      if [ -z "$ANTHROPIC_API_KEY" ]; then
-                        echo "::error::ANTHROPIC_API_KEY is not set"
-                        exit 1
-                      fi
-                      
-                      # 使用Python处理API调用，更可靠地处理JSON和转义
-                      python3 -c '
+          EOT
+          
+          # Add diff content and end marker
+          cat diff_content.txt >> user_prompt.txt
+          echo -e "\n\`\`\`" >> user_prompt.txt
+          
+          echo "User prompt prepared successfully"
+          
+      - name: Call Claude API with Python
+        id: call_claude
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::error::ANTHROPIC_API_KEY is not set"
+            exit 1
+          fi
+          
+          python3 -c '
             import json
             import os
             import requests
+            import re
             from pathlib import Path
             
-            # 读取用户提示
+            # Read user prompt
             with open("user_prompt.txt", "r") as f:
                 user_prompt = f.read()
             
-            # 构建API请求
+            # Build API request
             headers = {
                 "x-api-key": os.environ["ANTHROPIC_API_KEY"],
                 "anthropic-version": "2023-06-01",
@@ -144,21 +142,21 @@ jobs:
                 ]
             }
             
-            # 发送请求
+            # Send request
             print("Sending request to Claude API...")
             response = requests.post("https://api.anthropic.com/v1/messages", headers=headers, json=data)
             
-            # 检查状态码
+            # Check status code
             print(f"API response status code: {response.status_code}")
             if response.status_code != 200:
                 print(f"Error response: {response.text}")
                 exit(1)
             
-            # 保存整个响应
+            # Save the entire response
             with open("claude_response.json", "w") as f:
                 f.write(response.text)
             
-            # 提取并保存内容
+            # Extract and save content
             response_data = response.json()
             if "content" in response_data and len(response_data["content"]) > 0:
                 review_text = response_data["content"][0]["text"]
@@ -169,27 +167,31 @@ jobs:
                 print("No content found in response")
                 exit(1)
             
-            # 尝试提取JSON
-            import re
+            # Attempt to extract JSON more robustly
+            # Look for a JSON block first, then try to parse the whole text if no block is found
             json_match = re.search(r"```json\s*(.+?)```", review_text, re.DOTALL)
             if json_match:
                 json_text = json_match.group(1).strip()
             else:
+                # If no JSON block is found, assume the entire content is JSON
                 json_text = review_text.strip()
             
             try:
-                # 验证JSON是否有效
+                # Validate JSON
                 parsed_json = json.loads(json_text)
                 with open("extracted_json.txt", "w") as f:
                     json.dump(parsed_json, f, indent=2)
                 print("JSON extracted and validated successfully")
-            except Exception as e:
+            except json.JSONDecodeError as e:
                 print(f"Error parsing JSON: {e}")
-                print("Raw content received:")
+                print("Raw content received (first 500 chars):")
                 print(json_text[:500])
                 exit(1)
-            '
-            
+            except Exception as e:
+                print(f"An unexpected error occurred: {e}")
+                exit(1)
+          '
+          
       - name: Post PR comments
         uses: actions/github-script@v6
         with:
@@ -216,15 +218,15 @@ jobs:
             const prNumber = context.payload.pull_request.number;
             const headSha = context.payload.pull_request.head.sha;
             
-            // 创建主评论
+            // Create main comment
             let mainComment = `# Claude AI 代码审查\n\n`;
             
-            // 添加摘要
+            // Add summary
             if (reviewData.summary) {
               mainComment += `## 1. PR 摘要\n\n${reviewData.summary}\n\n`;
             }
             
-            // 添加低置信度问题
+            // Add low-confidence issues
             if (reviewData.low_confidence_issues && reviewData.low_confidence_issues.length > 0) {
               mainComment += `## 2. 可能存在的问题\n\n`;
               for (const issue of reviewData.low_confidence_issues) {
@@ -236,7 +238,7 @@ jobs:
               }
             }
             
-            // 注明行内评论位置
+            // Note inline comment locations
             mainComment += `## 3. 代码修复建议\n\n`;
             if (reviewData.high_confidence_fixes && reviewData.high_confidence_fixes.length > 0) {
               mainComment += `已针对 ${reviewData.high_confidence_fixes.length} 处代码提出修复建议，请查看相关行的行内评论。\n\n`;
@@ -244,12 +246,12 @@ jobs:
               mainComment += `未发现需要立即修复的问题。\n\n`;
             }
             
-            // 添加其他建议
+            // Add other suggestions
             if (reviewData.other_suggestions) {
               mainComment += `## 4. 其他改进建议\n\n${reviewData.other_suggestions}\n\n`;
             }
             
-            // 发布主评论
+            // Post main comment
             try {
               await github.rest.issues.createComment({
                 ...context.repo,
@@ -262,7 +264,7 @@ jobs:
               core.setFailed(`Failed to post main comment: ${error.message}`);
             }
             
-            // 发布行内评论
+            // Post inline comments
             if (reviewData.high_confidence_fixes && reviewData.high_confidence_fixes.length > 0) {
               console.log(`Processing ${reviewData.high_confidence_fixes.length} code fix suggestions...`);
               
@@ -273,21 +275,34 @@ jobs:
                 }
                 
                 try {
-                  console.log(`Posting review comment for ${fix.file} line ${fix.line}`);
-                  
+                  console.log(`Attempting to post review comment for ${fix.file} line ${fix.line}`);
+                  // Ensure the line number is an integer
+                  const lineNumber = parseInt(fix.line, 10);
+                  if (isNaN(lineNumber)) {
+                      console.error(`Invalid line number for ${fix.file}: ${fix.line}`);
+                      // Fallback to a regular comment if line number is invalid
+                      await github.rest.issues.createComment({
+                          ...context.repo,
+                          issue_number: prNumber,
+                          body: `**注意：** 无法在 \`${fix.file}\` 第 ${fix.line} 行发布行内评论，因为行号无效。\n\n${fix.description}\n\n${fix.suggested_code}\n\n> 这通常是因为该行不在PR差异中或已被其他修改影响。`
+                      });
+                      continue;
+                  }
+
+
                   await github.rest.pulls.createReviewComment({
                     ...context.repo,
                     pull_number: prNumber,
                     commit_id: headSha,
                     path: fix.file,
-                    line: fix.line,
+                    line: lineNumber,
                     side: 'RIGHT',
                     body: `${fix.description}\n\n${fix.suggested_code}`
                   });
                 } catch (error) {
                   console.error(`Failed to post review comment for ${fix.file}:${fix.line}:`, error);
                   
-                  // 发布回退评论
+                  // Post fallback comment
                   try {
                     await github.rest.issues.createComment({
                       ...context.repo,
