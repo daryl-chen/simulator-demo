@@ -29,7 +29,6 @@ jobs:
           set -eo pipefail
 
           # 1. 获取 diff_url
-          # 修正这里：移除多余的 Markdown 链接格式 `[]()`
           DIFF_URL_JSON=$(curl -sS -f -H "Authorization: token $GH_TOKEN" "https://api.github.com/repos/$REPO/pulls/$PR_NUMBER")
           
           DIFF_URL=$(echo "$DIFF_URL_JSON" | jq -r .diff_url)
@@ -59,6 +58,13 @@ jobs:
           # relative to the 'run: |' line.
           DIFF_RAW=$(cat pr.diff)
           DIFF_TRUNCATED=$(echo "$DIFF_RAW" | head -c 12000) 
+
+          # DEBUG: 打印 DIFF_TRUNCATED 的内容和长度
+          echo "DEBUG: Content of DIFF_TRUNCATED variable (first 500 chars):"
+          echo "$DIFF_TRUNCATED" | head -c 500 || true
+          echo ""
+          echo "DEBUG: Length of DIFF_TRUNCATED variable: ${#DIFF_TRUNCATED}"
+          echo ""
 
           if [ -z "$DIFF_TRUNCATED" ]; then
             echo "WARNING: Diff content is empty. Claude will likely receive an empty diff."
@@ -118,7 +124,7 @@ jobs:
                   "content": $diff_content
                 }
               ]
-            }' | curl -sS [https://api.anthropic.com/v1/messages](https://api.anthropic.com/v1/messages) \
+            }' | curl -sS https://api.anthropic.com/v1/messages \
             -H "x-api-key: $ANTHROPIC_API_KEY" \
             -H "anthropic-version: 2023-06-01" \
             -H "content-type: application/json" \
