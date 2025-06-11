@@ -72,19 +72,19 @@ jobs:
           # 将 JSON payload 定义在一个单行字符串中，以避免 Shell 解析问题
           # 变量名加上 _TEMPLATE 后缀，表示这是一个用于 jq 的模板字符串
           JSON_PAYLOAD_TEMPLATE='
-{
-  "model": $model,
-  "max_tokens": ($max_tokens_str | tonumber),
-  "temperature": ($temperature_str | tonumber),
-  "system": $system_message,
-  "messages": [
-    {
-      "role": "user",
-      "content": $diff_content
-    }
-  ]
-}
-'
+          {
+            "model": $model,
+            "max_tokens": ($max_tokens_str | tonumber),
+            "temperature": ($temperature_str | tonumber),
+            "system": $system_message,
+            "messages": [
+              {
+                "role": "user",
+                "content": $diff_content
+              }
+            ]
+          }
+          '
           # 构建发送给 Claude API 的 JSON payload，并直接通过管道传递给 curl
           # 移除 JSON_PAYLOAD 变量，直接将 jq 的输出传递给 curl -d @-
           echo "$JSON_PAYLOAD_TEMPLATE" | jq -n \
@@ -104,7 +104,7 @@ jobs:
               
               3.  \`high_confidence_fixes\` (array of objects):
                   * \`file\` (string): 相关的相对文件路径（例如：`src/main/java/com/example/MyClass.java`）。
-                  * \`line\` (number): 建议修改的起始行号。**此行号至关重要：它必须是你的建议所针对的代码在 PR **修改后文件** 中**实际被修改或添加**的行的精确起始行号。如果该行未在               PR 差异中被标记为添加、删除或修改，则 GitHub 将无法关联此评论。**
+                  * \`line\` (number): 建议修改的起始行号。**此行号至关重要：它必须是你的建议所针对的代码在 PR **修改后文件** 中**实际被修改或添加**的行的精确起始行号。如果该行未在 PR               差异中被标记为添加、删除或修改，则 GitHub 将无法关联此评论。**
                   * \`description\` (string): 确认的问题的简洁描述。
                   * \`suggested_code\` (string): 包含修复建议的 Markdown 代码块。**你必须使用 ```suggestion` 格式**，例如：
                       \`\`\`
@@ -128,7 +128,7 @@ jobs:
               ```diff
               ${DIFF_TRUNCATED}
               ```" \
-            "$JSON_PAYLOAD_TEMPLATE" | curl -sS https://api.anthropic.com/v1/messages \
+            "$JSON_PAYLOAD_TEMPLATE" | curl -sS [https://api.anthropic.com/v1/messages](https://api.anthropic.com/v1/messages) \
             -H "x-api-key: $ANTHROPIC_API_KEY" \
             -H "anthropic-version: 2023-06-01" \
             -H "content-type: application/json" \
