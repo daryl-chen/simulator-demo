@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read # 允许读取仓库内容，包括文件和PR diff
-      pull-requests: write # 允许读取 PR 元数据，并允许在 PR 上发表评论
+      pull_requests: write # 允许读取 PR 元数据，并允许在 PR 上发表评论
     steps:
       - name: Checkout PR code
         uses: actions/checkout@v3
@@ -39,8 +39,6 @@ jobs:
           fi
 
           # 2. 下载 diff 文件
-          # 移除 -v 参数，减少日志输出
-          # 错误信息仍会通过 stderr 打印
           curl -L -f -H "Authorization: token $GH_TOKEN" "$DIFF_URL" > pr.diff
 
           # 3. 验证 pr.diff 文件内容
@@ -95,13 +93,11 @@ Code Diff:\n\n${DIFF_TRUNCATED}" \
             }'
           )
 
-          # 确保 ANTHROPIC_API_KEY 环境变量已设置
           if [ -z "$ANTHROPIC_API_KEY" ]; then
             echo "ERROR: ANTHROPIC_API_KEY is not set. Cannot call Claude API."
             exit 1
           fi
 
-          # 调用 Claude API
           RESPONSE_FULL=$(curl https://api.anthropic.com/v1/messages \
             -H "x-api-key: $ANTHROPIC_API_KEY" \
             -H "anthropic-version: 2023-06-01" \
@@ -110,14 +106,12 @@ Code Diff:\n\n${DIFF_TRUNCATED}" \
           
           echo "$RESPONSE_FULL" > review_response.json
 
-          # 检查 Claude API 响应是否包含错误字段
           if echo "$RESPONSE_FULL" | jq -e '.error.type' > /dev/null; then
             echo "ERROR: Claude API returned an error:"
             echo "$RESPONSE_FULL" | jq '.error | .type + ": " + .message'
             exit 1
           fi
 
-          # 如果没有错误字段，但响应内容不符合预期
           if ! echo "$RESPONSE_FULL" | jq -e '.content[0].text' > /dev/null; then
               echo "ERROR: Claude API response did not contain expected content format. Response was:"
               echo "$RESPONSE_FULL"
@@ -150,19 +144,15 @@ Code Diff:\n\n${DIFF_TRUNCATED}" \
           echo "$COMMENT_PAYLOAD" | head -c 500 || true
           echo ""
 
-          # 移除 -s (silent) 参数，以便在出错时能看到 curl 的详细输出
-          # 增加 -v (verbose) 参数，提供更详细的 HTTP 请求和响应信息
           RESPONSE_STATUS=$(curl -v -X POST \
             -H "Authorization: token $GH_TOKEN" \
             -H "Content-Type: application/json" \
             -d "$COMMENT_PAYLOAD" \
-            https://api.github.com/repos/$REPO/issues/$PR_NUMBER/comments 2>&1) # 重定向 stderr 到 stdout
+            https://api.github.com/repos/$REPO/issues/$PR_NUMBER/comments 2>&1)
 
-          echo "GitHub API response for posting comment:" 
+          echo "GitHub API response for posting comment:"
           echo "$RESPONSE_STATUS"
 
-          # 检查 HTTP 状态码是否成功 (例如 200, 201, 202)
-          # 使用 grep 检查 curl -v 输出中的 HTTP 状态码
           if echo "$RESPONSE_STATUS" | grep -q "HTTP/.* 20[0-2]"; then
             echo "PR comment posted successfully."
           else
