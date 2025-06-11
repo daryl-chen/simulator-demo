@@ -64,11 +64,9 @@ jobs:
             echo "WARNING: Diff content is empty. Claude will likely receive an empty diff."
           fi
 
-          # 构建发送给 Claude API 的 JSON payload
-          # IMPORTANT: 请确保 'claude-3-7-sonnet-20250219' 是 Anthropic 官方支持且您的账户可用的模型名称。
-          # 提示词被更新，以要求 Claude 以 JSON 格式返回结果，并明确定义每个字段，特别是 suggested_code 的格式。
-          # 增加 max_tokens 以减少截断的可能性。
-          JSON_PAYLOAD=$(jq -n \
+          # 构建发送给 Claude API 的 JSON payload，并直接通过管道传递给 curl
+          # 移除 JSON_PAYLOAD 变量，直接将 jq 的输出传递给 curl -d @-
+          jq -n \
             --arg model "claude-3-7-sonnet-20250219" \
             --arg max_tokens_str "8192" \
             --arg temperature_str "0.2" \
@@ -115,35 +113,32 @@ jobs:
                   "content": $diff_content
                 }
               ]
-            }'
-          )
+            }' | curl -sS [https://api.anthropic.com/v1/messages](https://api.anthropic.com/v1/messages) \
+            -H "x-api-key: $ANTHROPIC_API_KEY" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "content-type: application/json" \
+            -d @- > review_response.json # -d @- 表示从标准输入读取数据
 
           if [ -z "$ANTHROPIC_API_KEY" ]; then
             echo "ERROR: ANTHROPIC_API_KEY is not set. Cannot call Claude API."
             exit 1
           fi
 
-          RESPONSE_FULL=$(curl [https://api.anthropic.com/v1/messages](https://api.anthropic.com/v1/messages) \
-            -H "x-api-key: $ANTHROPIC_API_KEY" \
-            -H "anthropic-version: 2023-06-01" \
-            -H "content-type: application/json" \
-            -d "$JSON_PAYLOAD")
-          
-          echo "$RESPONSE_FULL" > review_response.json
-
-          if echo "$RESPONSE_FULL" | jq -e '.error.type' > /dev/null; then
-            echo "ERROR: Claude API returned an error:"
-            echo "$RESPONSE_FULL" | jq '.error | .type + ": " + .message'
-            exit 1
-          fi
-
-          if ! echo "$RESPONSE_FULL" | jq -e '.' > /dev/null; then
-              echo "ERROR: Claude API response is not valid JSON. Response was:"
-              echo "$RESPONSE_FULL"
+          # 确保 review_response.json 已经生成，并且是有效的 JSON
+          if ! [ -s review_response.json ] || ! jq -e '.' review_response.json > /dev/null; then
+              echo "ERROR: Claude API response is not valid JSON or file is empty. Response was:"
+              cat review_response.json || echo "File is empty or not found."
               exit 1
           fi
 
-          echo "Claude review completed."
+          # 检查 API 响应是否包含错误字段
+          if jq -e '.error.type' review_response.json > /dev/null; then
+            echo "ERROR: Claude API returned an error:"
+            jq '.error | .type + ": " + .message' review_response.json
+            exit 1
+          fi
+
+          echo "Claude review completed. Response saved to review_response.json."
 
       - name: Debug Claude API Response JSON
         run: |
