@@ -65,9 +65,10 @@ jobs:
           # 构建发送给 Claude API 的 JSON payload
           # IMPORTANT: 请确保 'claude-3-7-sonnet-20250219' 是 Anthropic 官方支持且您的账户可用的模型名称。
           # 提示词被更新，以要求 Claude 以 JSON 格式返回结果，并明确定义每个字段，特别是 suggested_code 的格式。
+          # 增加 max_tokens 以减少截断的可能性。
           JSON_PAYLOAD=$(jq -n \
             --arg model "claude-3-7-sonnet-20250219" \
-            --arg max_tokens_str "1024" \
+            --arg max_tokens_str "4096" \
             --arg temperature_str "0.2" \
             --arg system_message "你是一位专业的 AI 代码评审员，专注于为 GitHub Pull Request 提供类似 GitHub Copilot 的高质量、可操作的审查。你的反馈应清晰、结构化，并以 **JSON 格式**提供。请严格遵守 JSON 结构和 `suggested_code` 中的 Markdown ```suggestion` 格式，以确保在 GitHub UI 中可接受。你的目标是识别潜在的错误、改进、最佳实践违规、性能瓶颈和安全问题。请确保你的 JSON 结果是完整的且可解析的。" \
             --arg diff_content "这是一个 GitHub Pull Request 的代码差异。请对它进行全面审查，并以 **JSON 格式**提供详细、可操作的反馈。你的响应应包含以下顶级键：
@@ -117,7 +118,6 @@ jobs:
             exit 1
           fi
 
-          # 注意：这里不再包含 -f 参数，即使 API 返回非 2xx 状态码也捕获响应体
           RESPONSE_FULL=$(curl https://api.anthropic.com/v1/messages \
             -H "x-api-key: $ANTHROPIC_API_KEY" \
             -H "anthropic-version: 2023-06-01" \
@@ -155,12 +155,34 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
-            const reviewData = JSON.parse(fs.readFileSync('review_response.json', 'utf8'));
+            const rawClaudeResponse = JSON.parse(fs.readFileSync('review_response.json', 'utf8'));
             const prNumber = context.payload.pull_request.number;
             const repo = context.repo;
             const headSha = context.payload.pull_request.head.sha;
 
             console.log(`Processing review data for PR #${prNumber}...`);
+
+            let reviewData;
+            try {
+              // 提取并清理 Claude 响应中的 JSON 字符串
+              let jsonString = rawClaudeResponse.content[0].text;
+              // 移除 Markdown 代码块的开头和结尾
+              if (jsonString.startsWith('```json\\n') && jsonString.endsWith('\\n```')) {
+                jsonString = jsonString.substring(8, jsonString.length - 4);
+              }
+              reviewData = JSON.parse(jsonString);
+              console.log('Successfully parsed Claude review JSON.');
+            } catch (error) {
+              console.error('Failed to parse Claude review JSON from content[0].text:', error.message);
+              // 如果解析失败，仍然尝试发布一个错误评论
+              await github.rest.issues.createComment({
+                owner: repo.owner,
+                repo: repo.repo,
+                issue_number: prNumber,
+                body: `Claude review failed due to invalid JSON response. Please check workflow logs for details.\n\nRaw response:\n\`\`\`json\n${JSON.stringify(rawClaudeResponse, null, 2)}\n\`\`\``
+              });
+              process.exit(1); // 终止脚本
+            }
 
             let mainCommentBody = "";
 
@@ -173,7 +195,7 @@ jobs:
             if (reviewData.low_confidence_issues && reviewData.low_confidence_issues.length > 0) {
               mainCommentBody += `## 2. 存疑但无法确认的问题：\n\n`;
               reviewData.low_confidence_issues.forEach(issue => {
-                let issueLine = issue.line ? ` (Line: ${issue.line} in \`${issue.file}\`)` : "";
+                let issueLine = issue.file && issue.line ? ` (Line: ${issue.line} in \`${issue.file}\`)` : "";
                 mainCommentBody += `- **${issue.description}**${issueLine}\n`;
                 if (issue.context_code) {
                   mainCommentBody += `  \`\`\`\n${issue.context_code}\n\`\`\`\n`;
@@ -203,7 +225,7 @@ jobs:
                 console.error('Failed to post main PR comment:', error.message);
               }
             } else {
-              console.log('No content for main PR comment.');
+              console.log('No content for main PR comment (summary, low-confidence issues, other suggestions were empty).');
             }
 
 
