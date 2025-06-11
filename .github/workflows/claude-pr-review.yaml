@@ -173,11 +173,13 @@ jobs:
 
             console.log(`Processing review data for PR #${prNumber}...`);
 
-            // Helper function to escape backticks in strings for template literals
-            // This function should only be used for plain text content that might contain backticks
-            function escapeBackticks(str) {
+            // Helper function to escape characters that would break JavaScript template literals
+            // This function escapes backslashes, backticks, and dollar signs.
+            function escapeForTemplateLiteral(str) {
               if (typeof str !== 'string') return str; 
-              return str.replace(/`/g, '\\`');
+              return str.replace(/\\/g, '\\\\')    // Escape literal backslashes first
+                         .replace(/`/g, '\\`')     // Then escape backticks
+                         .replace(/\$/g, '\\$');   // Then escape dollar signs
             }
 
             let reviewData;
@@ -185,21 +187,19 @@ jobs:
               // 提取并清理 Claude 响应中的 JSON 字符串
               let jsonString = rawClaudeResponse.content[0].text;
               // 移除 Markdown 代码块的开头和结尾
-              // 使用正则表达式更健壮地处理换行符
               jsonString = jsonString.replace(/^```json\n/, '').replace(/\n```$/, '');
               
               reviewData = JSON.parse(jsonString);
               console.log('Successfully parsed Claude review JSON.');
             } catch (error) {
               console.error('Failed to parse Claude review JSON from content[0].text:', error.message);
-              // 如果解析失败，仍然尝试发布一个错误评论
               await github.rest.issues.createComment({
                 owner: repo.owner,
                 repo: repo.repo,
                 issue_number: prNumber,
                 body: `Claude review failed due to invalid JSON response. Please check workflow logs for details.\n\nRaw response:\n\`\`\`json\n${JSON.stringify(rawClaudeResponse, null, 2)}\n\`\`\``
               });
-              process.exit(1); // 终止脚本
+              process.exit(1);
             }
 
             let mainCommentBody = "";
@@ -207,7 +207,7 @@ jobs:
             // 1. 本次 PR 概述与关注点
             if (reviewData.summary) {
               console.log('DEBUG: Review Summary (raw):', reviewData.summary); 
-              mainCommentBody += `## 1. 本次 PR 概述与关注点：\n${escapeBackticks(reviewData.summary)}\n\n`;
+              mainCommentBody += `## 1. 本次 PR 概述与关注点：\n${escapeForTemplateLiteral(reviewData.summary)}\n\n`;
             }
 
             // 2. 存疑但无法确认的问题
@@ -219,9 +219,10 @@ jobs:
                 console.log('DEBUG:   Issue description (raw):', issue.description); 
                 console.log('DEBUG:   Issue context_code (raw):', issue.context_code); 
 
-                let issueLine = issue.file && issue.line ? ` (Line: ${issue.line} in \`${escapeBackticks(issue.file)}\`)` : "";
-                mainCommentBody += `- **${escapeBackticks(issue.description)}**${issueLine}\n`;
-                // For context_code, Claude returns a Markdown code block, so insert directly
+                let issueLine = issue.file && issue.line ? ` (Line: ${issue.line} in \`${escapeForTemplateLiteral(issue.file)}\`)` : "";
+                mainCommentBody += `- **${escapeForTemplateLiteral(issue.description)}**${issueLine}\n`;
+                // context_code is expected to be a Markdown code block, so insert directly without additional escaping.
+                // It's already correctly formatted by Claude within the JSON string.
                 if (issue.context_code) {
                   mainCommentBody += `  ${issue.context_code}\n`; 
                 }
@@ -233,7 +234,7 @@ jobs:
             // 4. 其他改进建议（如果有的话）
             if (reviewData.other_suggestions) {
               console.log('DEBUG: Other Suggestions (raw):', reviewData.other_suggestions); 
-              mainCommentBody += `## 4. 其他改进建议：\n${escapeBackticks(reviewData.other_suggestions)}\n\n`;
+              mainCommentBody += `## 4. 其他改进建议：\n${escapeForTemplateLiteral(reviewData.other_suggestions)}\n\n`;
             }
 
 
@@ -274,8 +275,10 @@ jobs:
                 }
 
                 // Construct the comment body with the suggestion block
-                // escapeBackticks for description, suggested_code is expected to be a markdown suggestion block
-                const commentBody = `${escapeBackticks(fix.description)}\n\n${fix.suggested_code}`;
+                // suggested_code is expected to be a Markdown suggestion block.
+                // We only escape the description, as suggested_code already contains
+                // its own Markdown formatting and internal escaping by Claude.
+                const commentBody = `${escapeForTemplateLiteral(fix.description)}\n\n${fix.suggested_code}`;
                 
                 console.log('DEBUG: Generated commentBody (before API call):', commentBody); 
 
@@ -286,8 +289,8 @@ jobs:
                     pull_number: prNumber,
                     commit_id: headSha,
                     path: fix.file,
-                    line: fix.line, # This is the line in the NEW file where the suggestion applies
-                    side: 'RIGHT', # Suggestion applies to the RIGHT (new) side of the diff
+                    line: fix.line, // This is the line in the NEW file where the suggestion applies
+                    side: 'RIGHT', // Suggestion applies to the RIGHT (new) side of the diff
                     body: commentBody
                   });
                   console.log(`Posted inline suggestion for ${fix.file} at line ${fix.line}.`);
