@@ -31,7 +31,7 @@ jobs:
           # 1. 获取 diff_url
           DIFF_URL_JSON=$(curl -sS -f -H "Authorization: token $GH_TOKEN" "https://api.github.com/repos/$REPO/pulls/$PR_NUMBER")
           
-          DIFF_URL=$(echo "$DIFF_URL_JSON" | jq -r .diff_url)
+          DIFF_URL=$(echo "$DIFF_URL_JSON" | jq -r .diff_url) # 修正这里：确保从 DIFF_URL_JSON 解析
 
           if [ -z "$DIFF_URL" ] || [ "$DIFF_URL" == "null" ]; then
             echo "ERROR: Failed to get diff_url or it was null. Review GitHub API response."
@@ -53,8 +53,8 @@ jobs:
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
-          # The following lines are sensitive to YAML indentation.
-          # Ensure they are consistently indented with spaces.
+          # Ensure all lines below are consistently indented with 2 additional spaces
+          # relative to the 'run: |' line.
           DIFF_RAW=$(cat pr.diff)
           DIFF_TRUNCATED=$(echo "$DIFF_RAW" | head -c 12000) 
 
@@ -64,11 +64,9 @@ jobs:
 
           # 构建发送给 Claude API 的 JSON payload
           # IMPORTANT: 请确保 'claude-3-7-sonnet-20250219' 是 Anthropic 官方支持且您的账户可用的模型名称。
-          # 提示词被更新，以要求 Claude 以 JSON 格式返回结果，并明确定义每个字段，特别是 suggested_code 的格式。
-          # 增加 max_tokens 以减少截断的可能性。
           JSON_PAYLOAD=$(jq -n \
             --arg model "claude-3-7-sonnet-20250219" \
-            --arg max_tokens_str "4096" \
+            --arg max_tokens_str "8192" \
             --arg temperature_str "0.2" \
             --arg system_message "你是一位专业的 AI 代码评审员，专注于为 GitHub Pull Request 提供类似 GitHub Copilot 的高质量、可操作的审查。你的反馈应清晰、结构化，并以 **JSON 格式**提供。请严格遵守 JSON 结构和 `suggested_code` 中的 Markdown ```suggestion` 格式，以确保在 GitHub UI 中可接受。你的目标是识别潜在的错误、改进、最佳实践违规、性能瓶颈和安全问题。请确保你的 JSON 结果是完整的且可解析的。" \
             --arg diff_content "这是一个 GitHub Pull Request 的代码差异。请对它进行全面审查，并以 **JSON 格式**提供详细、可操作的反馈。你的响应应包含以下顶级键：
@@ -126,23 +124,20 @@ jobs:
           
           echo "$RESPONSE_FULL" > review_response.json
 
-          # 检查 API 响应是否包含错误字段
           if echo "$RESPONSE_FULL" | jq -e '.error.type' > /dev/null; then
             echo "ERROR: Claude API returned an error:"
-            echo "$RESPONSE_FULL" | jq '.error | .type + ": " + .message' # 打印具体的错误类型和消息
+            echo "$RESPONSE_FULL" | jq '.error | .type + ": " + .message'
             exit 1
           fi
 
-          # 尝试解析 JSON，如果失败则说明响应格式不正确
           if ! echo "$RESPONSE_FULL" | jq -e '.' > /dev/null; then
               echo "ERROR: Claude API response is not valid JSON. Response was:"
               echo "$RESPONSE_FULL"
               exit 1
           fi
 
-          echo "Claude review completed. Response saved to review_response.json."
-      
-      # 新增步骤：打印 Claude API 响应的 JSON 内容
+          echo "Claude review completed."
+
       - name: Debug Claude API Response JSON
         run: |
           echo "Content of review_response.json:"
@@ -167,9 +162,9 @@ jobs:
               // 提取并清理 Claude 响应中的 JSON 字符串
               let jsonString = rawClaudeResponse.content[0].text;
               // 移除 Markdown 代码块的开头和结尾
-              if (jsonString.startsWith('```json\\n') && jsonString.endsWith('\\n```')) {
-                jsonString = jsonString.substring(8, jsonString.length - 4);
-              }
+              // 使用正则表达式更健壮地处理换行符
+              jsonString = jsonString.replace(/^```json\n/, '').replace(/\n```$/, '');
+              
               reviewData = JSON.parse(jsonString);
               console.log('Successfully parsed Claude review JSON.');
             } catch (error) {
