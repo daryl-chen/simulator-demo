@@ -132,7 +132,7 @@ jobs:
                   "content": $diff_content_val
                 }
               ]
-            }' | curl -sS [https://api.anthropic.com/v1/messages](https://api.anthropic.com/v1/messages) \
+            }' | curl -sS https://api.anthropic.com/v1/messages \
             -H "x-api-key: $ANTHROPIC_API_KEY" \
             -H "anthropic-version: 2023-06-01" \
             -H "content-type: application/json" \
