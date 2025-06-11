@@ -70,17 +70,17 @@ jobs:
             --arg temperature_str "0.2" \
             --arg system_message "You are an expert software engineer specializing in thorough and actionable code reviews for GitHub pull requests. Your goal is to provide concise, constructive, and highly relevant feedback, similar to a skilled human reviewer or an advanced AI assistant like GitHub Copilot's review feature. Focus on code quality, potential issues, best practices, and opportunities for improvement." \
             --arg diff_content "Here is a code diff from a GitHub pull request. Please perform a comprehensive code review focusing on the following aspects:
-
-1.  **Correctness & Logic:** Identify any potential bugs, logical errors, or edge cases that might be overlooked.
-2.  **Readability & Clarity:** Suggest improvements for code clarity, comments, and overall understanding.
-3.  **Maintainability & Design:** Point out any areas that could be refactored for better long-term maintainability, scalability, or adherence to design principles.
-4.  **Best Practices & Standards:** Check for adherence to common coding standards, design patterns, and idiomatic language usage.
-5.  **Performance & Efficiency:** Highlight any potential performance bottlenecks or opportunities for optimization.
-6.  **Security:** Identify any security vulnerabilities or unsafe practices.
-
-Provide your feedback in a clear, concise, and actionable manner. If possible, offer concrete code suggestions or examples. Prioritize the most critical issues. Aim for a review that is helpful, educational, and easy to understand for the developer.
-
-Code Diff:\n\n${DIFF_TRUNCATED}" \
+              
+              1.  **Correctness & Logic:** Identify any potential bugs, logical errors, or edge cases that might be overlooked.
+              2.  **Readability & Clarity:** Suggest improvements for code clarity, comments, and overall understanding.
+              3.  **Maintainability & Design:** Point out any areas that could be refactored for better long-term maintainability, scalability, or adherence to design principles.
+              4.  **Best Practices & Standards:** Check for adherence to common coding standards, design patterns, and idiomatic language usage.
+              5.  **Performance & Efficiency:** Highlight any potential performance bottlenecks or opportunities for optimization.
+              6.  **Security:** Identify any security vulnerabilities or unsafe practices.
+              
+              Provide your feedback in a clear, concise, and actionable manner. If possible, offer concrete code suggestions or examples. Prioritize the most critical issues. Aim for a review that is helpful, educational, and easy to understand for the developer.
+              
+              Code Diff:\n\n${DIFF_TRUNCATED}" \
             '{
               "model": $model,
               "max_tokens": ($max_tokens_str | tonumber),
