@@ -61,7 +61,7 @@ jobs:
           if [ -z "$DIFF_TRUNCATED" ]; then
             echo "WARNING: Diff content is empty. Claude will likely receive an empty diff."
           fi
-              
+
           # 构建发送给 Claude API 的 JSON payload
           # IMPORTANT: 请确保 'claude-3-7-sonnet-20250219' 是 Anthropic 官方支持且您的账户可用的模型名称。
           # 提示词被更新，以要求 Claude 以 JSON 格式返回结果，并明确定义每个字段，特别是 suggested_code 的格式。
@@ -72,32 +72,32 @@ jobs:
             --arg system_message "你是一位专业的 AI 代码评审员，专注于为 GitHub Pull Request 提供类似 GitHub Copilot 的高质量、可操作的审查。你的反馈应清晰、结构化，并以 **JSON 格式**提供。请严格遵守 JSON 结构和 `suggested_code` 中的 Markdown ```suggestion` 格式，以确保在 GitHub UI 中可接受。你的目标是识别潜在的错误、改进、最佳实践违规、性能瓶颈和安全问题。请确保你的 JSON 结果是完整的且可解析的。" \
             --arg diff_content "这是一个 GitHub Pull Request 的代码差异。请对它进行全面审查，并以 **JSON 格式**提供详细、可操作的反馈。你的响应应包含以下顶级键：
 
-              1.  \`summary\` (string): 本次 PR 的内容总结、目的和供其他评审人员关注的 1-2 个关键点。
-              2.  \`low_confidence_issues\` (array of objects):
-                  * \`file\` (string): 相关的相对文件路径（例如：`src/main/java/com/example/MyClass.java`）。
-                  * \`line\` (number, optional): 问题的起始行号（在修改后的文件中）。
-                  * \`description\` (string): 对问题的描述，解释你为什么怀疑它，以及需要进一步确认的原因。
-                  * \`context_code\` (string, optional): 相关代码片段，用 Markdown 代码块包裹。
-              3.  \`high_confidence_fixes\` (array of objects):
-                  * \`file\` (string): 相关的相对文件路径（例如：`src/main/java/com/example/MyClass.java`）。
-                  * \`line\` (number): 建议修改的起始行号（在修改后的文件中）。**此行号必须是你的建议所针对的代码在 PR **修改后文件** 中的精确起始行号。**
-                  * \`description\` (string): 确认的问题的简洁描述。
-                  * \`suggested_code\` (string): 包含修复建议的 Markdown 代码块。**必须使用 ```suggestion` 格式**，例如：
-                      \`\`\`
-                      ```suggestion
-                      // 这是建议的修改代码
-                      新的代码行;
-                      ```
-                      \`\`\`
-                      请确保此代码块内容准确无误，可以直接在 GitHub UI 中点击“Accept suggestion”来应用。
-              4.  \`other_suggestions\` (string, optional): 其他非关键但有益的通用改进建议。
-              
-              请务必严格遵守 JSON 结构和 `suggested_code` 的 Markdown 格式。请避免在 `suggested_code` 中包含额外的换行符，除非它是代码的一部分。
+1.  \`summary\` (string): 本次 PR 的内容总结、目的和供其他评审人员关注的 1-2 个关键点。
+2.  \`low_confidence_issues\` (array of objects):
+    * \`file\` (string): 相关的相对文件路径（例如：`src/main/java/com/example/MyClass.java`）。
+    * \`line\` (number, optional): 问题的起始行号（在修改后的文件中）。
+    * \`description\` (string): 对问题的描述，解释你为什么怀疑它，以及需要进一步确认的原因。
+    * \`context_code\` (string, optional): 相关代码片段，用 Markdown 代码块包裹。
+3.  \`high_confidence_fixes\` (array of objects):
+    * \`file\` (string): 相关的相对文件路径（例如：`src/main/java/com/example/MyClass.java`）。
+    * \`line\` (number): 建议修改的起始行号（在修改后的文件中）。**此行号必须是你的建议所针对的代码在 PR **修改后文件** 中的精确起始行号。**
+    * \`description\` (string): 确认的问题的简洁描述。
+    * \`suggested_code\` (string): 包含修复建议的 Markdown 代码块。**必须使用 ```suggestion` 格式**，例如：
+        \`\`\`
+        ```suggestion
+        // 这是建议的修改代码
+        新的代码行;
+        ```
+        \`\`\`
+        请确保此代码块内容准确无误，可以直接在 GitHub UI 中点击“Accept suggestion”来应用。
+4.  \`other_suggestions\` (string, optional): 其他非关键但有益的通用改进建议。
 
-              代码差异：
-              ```diff
-              ${DIFF_TRUNCATED}
-              ```" \
+请务必严格遵守 JSON 结构和 `suggested_code` 的 Markdown 格式。请避免在 `suggested_code` 中包含额外的换行符，除非它是代码的一部分。
+
+代码差异：
+```diff
+${DIFF_TRUNCATED}
+```" \
             '{
               "model": $model,
               "max_tokens": ($max_tokens_str | tonumber),
@@ -141,6 +141,13 @@ jobs:
           fi
 
           echo "Claude review completed. Response saved to review_response.json."
+      
+      # 新增步骤：打印 Claude API 响应的 JSON 内容
+      - name: Debug Claude API Response JSON
+        run: |
+          echo "Content of review_response.json:"
+          cat review_response.json
+          echo ""
 
       - name: Post Structured PR Comments
         uses: actions/github-script@v6
