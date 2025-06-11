@@ -10,7 +10,7 @@ on:
 jobs:
   pr-review:
     runs-on: ubuntu-latest
-    permissions: # 添加此处，明确指定 Workflow 的权限
+    permissions:
       contents: read # 允许读取仓库内容，包括文件和PR diff
       pull-requests: write # 允许读取 PR 元数据，并允许在 PR 上发表评论
     steps:
@@ -22,90 +22,48 @@ jobs:
         run: |
           PR_NUMBER=${{ github.event.pull_request.number }}
           REPO=${{ github.repository }}
-          # GITHUB_TOKEN 是由 GitHub Actions 自动提供的，用于认证 GitHub API 请求
           GH_TOKEN=${{ secrets.GITHUB_TOKEN }}
 
-          echo "DEBUG: PR_NUMBER is $PR_NUMBER"
-          echo "DEBUG: REPO is $REPO"
+          echo "Fetching PR diff for PR #$PR_NUMBER in $REPO..."
 
-          # 使用 set -eo pipefail 确保任何管道中的错误都会导致脚本立即失败
           set -eo pipefail
 
-          # 1. 尝试获取 diff_url
-          echo "DEBUG: Attempting to fetch pull request metadata for PR #$PR_NUMBER from $REPO..."
-          # -s: 静默模式，不显示进度或错误信息（仅在没有 -S 或 -v 时）
-          # -S: 显示错误信息（即使在静默模式下）
-          # -f: 在 HTTP 错误时退出
+          # 1. 获取 diff_url
           DIFF_URL_JSON=$(curl -sS -f -H "Authorization: token $GH_TOKEN" "https://api.github.com/repos/$REPO/pulls/$PR_NUMBER")
           
-          echo "DEBUG: Raw API response for pull request (first 2000 chars):"
-          echo "$DIFF_URL_JSON" | head -c 2000 || true # 打印前2000字符，避免日志过长
-          echo ""
-
-          # 使用 jq 提取 diff_url。如果 diff_url 不存在或为 null，此操作会失败。
           DIFF_URL=$(echo "$DIFF_URL_JSON" | jq -r .diff_url)
 
-          # 检查 DIFF_URL 是否为空或 "null" 字符串
           if [ -z "$DIFF_URL" ] || [ "$DIFF_URL" == "null" ]; then
-            echo "ERROR: Failed to get diff_url or it was null. JQ might have failed or API response was unexpected. Review the raw API response above."
+            echo "ERROR: Failed to get diff_url or it was null. Review GitHub API response."
             exit 1
           fi
-
-          echo "DEBUG: Extracted DIFF_URL: $DIFF_URL"
 
           # 2. 下载 diff 文件
-          echo "DEBUG: Attempting to download diff from $DIFF_URL..."
-          # -L: 强制跟随重定向 (例如，从 github.com 重定向到 raw.githubusercontent.com)
-          # -v: 详细模式，打印 curl 操作的详细信息，包括请求头、响应头、连接过程等（调试时非常有用）
-          # > pr.diff: 将下载的内容（stdout）写入 pr.diff
-          # 2> curl_download_debug.log: 将 verbose 输出和错误（stderr）写入 curl_download_debug.log
-          curl -v -L -f -H "Authorization: token $GH_TOKEN" "$DIFF_URL" > pr.diff 2> curl_download_debug.log
-
-          echo "DEBUG: Curl download command output (from curl_download_debug.log):"
-          cat curl_download_debug.log || true # 打印 curl 详细日志
-          echo ""
+          # 移除 -v 参数，减少日志输出
+          # 错误信息仍会通过 stderr 打印
+          curl -L -f -H "Authorization: token $GH_TOKEN" "$DIFF_URL" > pr.diff
 
           # 3. 验证 pr.diff 文件内容
-          echo "DEBUG: Content of pr.diff (first 1000 chars):"
-          head -c 1000 pr.diff || true # 打印文件前1000个字符，即使文件为空也不会报错
-          echo "" # 确保换行
-
-          echo "DEBUG: Size of pr.diff:"
-          wc -c < pr.diff # 打印文件字节大小
-
-          # 检查 pr.diff 文件是否存在且大小大于 0
-          if [ ! -s pr.diff ]; then # -s 检查文件是否存在且不为空
-            echo "ERROR: pr.diff is empty or does not exist after download. Check curl command output above or permissions."
+          if [ ! -s pr.diff ]; then
+            echo "ERROR: pr.diff is empty or does not exist after download. Check curl command or permissions."
             exit 1
           fi
-          echo "DEBUG: PR diff fetched successfully into pr.diff"
+          echo "PR diff fetched successfully."
 
       - name: Send PR diff to Claude API
         id: claude_review
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
-          # 读取完整的 diff 内容
           DIFF_RAW=$(cat pr.diff)
-
-          # 截断 diff 内容以避免 token 溢出
-          # jq 会处理内部的字符串转义，所以这里不需要 sed 's/"/\\"/g'
           DIFF_TRUNCATED=$(echo "$DIFF_RAW" | head -c 12000) 
 
-          echo "DEBUG: Content of DIFF_TRUNCATED variable (first 500 chars):"
-          echo "$DIFF_TRUNCATED" | head -c 500 || true
-          echo ""
-
           if [ -z "$DIFF_TRUNCATED" ]; then
-            echo "WARNING: DIFF_TRUNCATED variable is empty. Claude will likely receive an empty diff."
+            echo "WARNING: Diff content is empty. Claude will likely receive an empty diff."
           fi
 
-          # 构建发送给 Claude API 的 JSON payload，使用 jq 确保正确转义
-          # --arg 参数将 shell 变量作为 JSON 字符串传递，jq 会自动处理转义
-          # 使用 `tonumber` 过滤器将字符串参数转换为数字类型
-          # IMPORTANT: Verify the correct model name from Anthropic API documentation or your account.
-          # The model name 'claude-3-7-sonnet-20250219' is restored based on your initial query.
-          # If this still results in 'not_found_error', please check Anthropic's official model list.
+          # 构建发送给 Claude API 的 JSON payload
+          # IMPORTANT: 请确保 'claude-3-7-sonnet-20250219' 是 Anthropic 官方支持且您的账户可用的模型名称。
           JSON_PAYLOAD=$(jq -n \
             --arg model "claude-3-7-sonnet-20250219" \
             --arg max_tokens_str "1024" \
@@ -126,10 +84,6 @@ jobs:
             }'
           )
 
-          echo "DEBUG: JSON_PAYLOAD sent to Claude API (first 1000 chars):" # 增加日志长度
-          echo "$JSON_PAYLOAD" | head -c 1000 || true
-          echo ""
-
           # 确保 ANTHROPIC_API_KEY 环境变量已设置
           if [ -z "$ANTHROPIC_API_KEY" ]; then
             echo "ERROR: ANTHROPIC_API_KEY is not set. Cannot call Claude API."
@@ -137,33 +91,25 @@ jobs:
           fi
 
           # 调用 Claude API
-          # 移除 -f 参数，以便即使收到 HTTP 错误也能捕获并打印响应体
-          # -sS: 静默模式但显示错误
-          RESPONSE_FULL=$(curl -sS https://api.anthropic.com/v1/messages \
+          # 移除 -sS 参数，让 curl 默认显示错误，但仍不会显示进度条
+          RESPONSE_FULL=$(curl https://api.anthropic.com/v1/messages \
             -H "x-api-key: $ANTHROPIC_API_KEY" \
             -H "anthropic-version: 2023-06-01" \
             -H "content-type: application/json" \
             -d "$JSON_PAYLOAD")
           
-          # 打印 Claude API 的原始响应，无论成功与否
-          echo "DEBUG: Raw Claude API response (full, up to 2000 chars):"
-          echo "$RESPONSE_FULL" | head -c 2000 || true
-          echo ""
-
-          # 将 Claude 的响应保存到文件
           echo "$RESPONSE_FULL" > review_response.json
 
           # 检查 Claude API 响应是否包含错误字段
-          # 如果存在 .error.type 字段，则表示有错误
           if echo "$RESPONSE_FULL" | jq -e '.error.type' > /dev/null; then
             echo "ERROR: Claude API returned an error:"
-            echo "$RESPONSE_FULL" | jq '.error | .type + ": " + .message' # 打印具体的错误类型和消息
+            echo "$RESPONSE_FULL" | jq '.error | .type + ": " + .message'
             exit 1
           fi
 
-          # 如果没有错误字段，但响应内容不符合预期 (例如，缺少 messages 或 content)
+          # 如果没有错误字段，但响应内容不符合预期
           if ! echo "$RESPONSE_FULL" | jq -e '.content[0].text' > /dev/null; then
-              echo "ERROR: Claude API response did not contain expected content format (e.g., .content[0].text is missing). Response was:"
+              echo "ERROR: Claude API response did not contain expected content format. Response was:"
               echo "$RESPONSE_FULL"
               exit 1
           fi
@@ -172,15 +118,11 @@ jobs:
 
       - name: Post comment to PR
         run: |
-          # 确保 review_response.json 文件存在且不为空
           if [ ! -s review_response.json ]; then
             echo "ERROR: review_response.json is empty or does not exist. Cannot post review."
-            # 设置一个默认的错误消息，以便即使 Claude 失败也能在 PR 中留下痕迹
             REVIEW="Claude review failed to generate a response. Please check workflow logs for details."
           else
-            # 从 Claude 响应中提取评论内容
             REVIEW=$(jq -r '.content[0].text' review_response.json)
-            # 检查提取到的评论内容是否为空
             if [ -z "$REVIEW" ]; then
               echo "WARNING: Claude review response text is empty. Posting a placeholder."
               REVIEW="Claude review completed, but no specific feedback was generated. This might indicate an issue with the diff content or Claude's response. Please check workflow logs."
@@ -191,14 +133,8 @@ jobs:
           REPO=${{ github.repository }}
           GH_TOKEN=${{ secrets.GITHUB_TOKEN }}
           
-          # 构建用于 GitHub API 的评论 JSON payload
           COMMENT_PAYLOAD=$(jq -nc --arg body "$REVIEW" '{ body: $body }')
           
-          echo "DEBUG: Comment payload to be posted (first 500 chars):"
-          echo "$COMMENT_PAYLOAD" | head -c 500 || true
-          echo ""
-
-          # 使用 curl 调用 GitHub API 在 PR 上发表评论
           curl -s -X POST \
             -H "Authorization: token $GH_TOKEN" \
             -H "Content-Type: application/json" \
