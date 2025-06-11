@@ -69,44 +69,44 @@ jobs:
           # 构建 Claude 的用户消息内容，确保 ${DIFF_TRUNCATED} 正确展开
           # 使用 'EOF_PROMPT' 作为结束标记，且不加引号，确保变量展开
           CLAUDE_USER_PROMPT=$(cat <<EOF_PROMPT
-            这是一个 GitHub Pull Request 的代码差异。请对它进行全面审查，并以 **JSON 格式**提供详细、可操作的反馈。你的响应应包含以下顶级键：
+这是一个 GitHub Pull Request 的代码差异。请对它进行全面审查，并以 **JSON 格式**提供详细、可操作的反馈。你的响应应包含以下顶级键：
 
-            1.  \`summary\` (string): 本次 PR 的内容总结、目的和供其他评审人员关注的 1-2 个关键点。
-            
-            2.  \`low_confidence_issues\` (array of objects):
-                * \`file\` (string): 相关的相对文件路径（例如：`src/main/java/com/example/MyClass.java`）。
-                * \`line\` (number, optional): 问题的起始行号（在修改后的文件中）。
-                * \`description\` (string): 对问题的描述，解释你为什么怀疑它，指出潜在的风险或需要进一步人工确认的地方。
-                * \`context_code\` (string, optional): 相关代码片段，用 Markdown 代码块包裹。
-            
-            3.  \`high_confidence_fixes\` (array of objects):
-                * \`file\` (string): 相关的相对文件路径（例如：`src/main/java/com/example/MyClass.java`）。
-                * \`line\` (number): 建议修改的起始行号。**此行号至关重要：它必须是你的建议所针对的代码在 PR **修改后文件** 中**实际被修改或添加**的行的精确起始行号。如果该行未在 PR             差异中被标记为添加、删除或修改，则 GitHub 将无法关联此评论。**
-                * \`description\` (string): 确认的问题的简洁描述。
-                * \`suggested_code\` (string): 包含修复建议的 Markdown 代码块。**你必须使用 ```suggestion` 格式**，例如：
-                    \`\`\`
-                    ```suggestion
-                    - // 这是原来的代码行
-                    + // 这是建议修改后的代码行
-                    ```
-                    \`\`\`
-                    **特别注意：**
-                    * 如果建议是删除一行，则只包含 `-` 开头的该行。
-                    * 如果建议是添加一行，则只包含 `+` 开头的该行。
-                    * 如果建议是修改一行，则包含 `-` 开头的原始行和 `+` 开头的修改后的行。
-                    * 如果建议修改多行，请确保 `suggested_code` 包含所有受影响的行，用 `-` 和 `+` 明确标记。
-                    * 请确保此代码块内容准确无误，代表了该行（或多行）的完整修改，可以直接在 GitHub UI 中点击“Accept suggestion”来应用。
-            
-            4.  \`other_suggestions\` (string, optional): 其他非关键但有益的通用改进建议。
-            
-            请务必严格遵守 JSON 结构和 `suggested_code` 的 Markdown 格式。请避免在 `suggested_code` 中包含额外的换行符，除非它是代码的一部分。
-            
-            代码差异：
-            ```diff
-            ${DIFF_TRUNCATED}
-            ```
-          EOF_PROMPT
-          )
+1.  \`summary\` (string): 本次 PR 的内容总结、目的和供其他评审人员关注的 1-2 个关键点。
+
+2.  \`low_confidence_issues\` (array of objects):
+    * \`file\` (string): 相关的相对文件路径（例如：`src/main/java/com/example/MyClass.java`）。
+    * \`line\` (number, optional): 问题的起始行号（在修改后的文件中）。
+    * \`description\` (string): 对问题的描述，解释你为什么怀疑它，指出潜在的风险或需要进一步人工确认的地方。
+    * \`context_code\` (string, optional): 相关代码片段，用 Markdown 代码块包裹。
+
+3.  \`high_confidence_fixes\` (array of objects):
+    * \`file\` (string): 相关的相对文件路径（例如：`src/main/java/com/example/MyClass.java`）。
+    * \`line\` (number): 建议修改的起始行号。**此行号至关重要：它必须是你的建议所针对的代码在 PR **修改后文件** 中**实际被修改或添加**的行的精确起始行号。如果该行未在 PR 差异中被标记为添加、删除或修改，则 GitHub 将无法关联此评论。**
+    * \`description\` (string): 确认的问题的简洁描述。
+    * \`suggested_code\` (string): 包含修复建议的 Markdown 代码块。**你必须使用 ```suggestion` 格式**，例如：
+        \`\`\`
+        ```suggestion
+        - // 这是原来的代码行
+        + // 这是建议修改后的代码行
+        ```
+        \`\`\`
+        **特别注意：**
+        * 如果建议是删除一行，则只包含 `-` 开头的该行。
+        * 如果建议是添加一行，则只包含 `+` 开头的该行。
+        * 如果建议是修改一行，则包含 `-` 开头的原始行和 `+` 开头的修改后的行。
+        * 如果建议修改多行，请确保 `suggested_code` 包含所有受影响的行，用 `-` 和 `+` 明确标记。
+        * 请确保此代码块内容准确无误，代表了该行（或多行）的完整修改，可以直接在 GitHub UI 中点击“Accept suggestion”来应用。
+
+4.  \`other_suggestions\` (string, optional): 其他非关键但有益的通用改进建议。
+
+请务必严格遵守 JSON 结构和 `suggested_code` 的 Markdown 格式。请避免在 `suggested_code` 中包含额外的换行符，除非它是代码的一部分。
+
+代码差异：
+```diff
+${DIFF_TRUNCATED}
+```
+EOF_PROMPT
+)
 
           if [ -z "$ANTHROPIC_API_KEY" ]; then
             echo "ERROR: ANTHROPIC_API_KEY is not set. Cannot call Claude API."
@@ -174,8 +174,9 @@ jobs:
             console.log(`Processing review data for PR #${prNumber}...`);
 
             // Helper function to escape backticks in strings for template literals
+            // This function should only be used for plain text content that might contain backticks
             function escapeBackticks(str) {
-              if (typeof str !== 'string') return str; // Ensure it's a string
+              if (typeof str !== 'string') return str; 
               return str.replace(/`/g, '\\`');
             }
 
@@ -214,8 +215,9 @@ jobs:
               reviewData.low_confidence_issues.forEach(issue => {
                 let issueLine = issue.file && issue.line ? ` (Line: ${issue.line} in \`${escapeBackticks(issue.file)}\`)` : "";
                 mainCommentBody += `- **${escapeBackticks(issue.description)}**${issueLine}\n`;
+                // For context_code, Claude returns a Markdown code block, so insert directly
                 if (issue.context_code) {
-                  mainCommentBody += `  \`\`\`\n${escapeBackticks(issue.context_code)}\n\`\`\`\n`;
+                  mainCommentBody += `  ${issue.context_code}\n`; 
                 }
                 mainCommentBody += "\n";
               });
@@ -257,7 +259,8 @@ jobs:
                 }
 
                 // Construct the comment body with the suggestion block
-                const commentBody = `${escapeBackticks(fix.description)}\n\n${escapeBackticks(fix.suggested_code)}`;
+                // For suggested_code, Claude returns a Markdown suggestion block, so insert directly
+                const commentBody = `${escapeBackticks(fix.description)}\n\n${fix.suggested_code}`;
 
                 try {
                   await github.rest.pulls.createReviewComment({
