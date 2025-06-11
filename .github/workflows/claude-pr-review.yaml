@@ -11,13 +11,15 @@ jobs:
   pr-review:
     runs-on: ubuntu-latest
     permissions:
-      contents: read # 允许读取仓库内容，包括文件和PR diff
-      pull-requests: write # 允许读取 PR 元数据，并允许在 PR 上发表评论
+      contents: read
+      pull-requests: write
     steps:
       - name: Checkout PR code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 获取完整历史以确保能获取正确的差异
 
-      - name: Fetch PR diff
+      - name: Fetch PR diff using GitHub API
         id: get_diff
         run: |
           PR_NUMBER=${{ github.event.pull_request.number }}
@@ -26,27 +28,19 @@ jobs:
 
           echo "Fetching PR diff for PR #$PR_NUMBER in $REPO..."
 
-          set -eo pipefail
+          # 直接使用 GitHub API 获取差异
+          curl -s -H "Accept: application/vnd.github.v3.diff" \
+               -H "Authorization: Bearer $GH_TOKEN" \
+               "https://api.github.com/repos/$REPO/pulls/$PR_NUMBER" > pr.diff
 
-          # 1. 获取 diff_url
-          DIFF_URL_JSON=$(curl -sS -f -H "Authorization: token $GH_TOKEN" "https://api.github.com/repos/$REPO/pulls/$PR_NUMBER")
-          
-          DIFF_URL=$(echo "$DIFF_URL_JSON" | jq -r .diff_url)
-
-          if [ -z "$DIFF_URL" ] || [ "$DIFF_URL" == "null" ]; then
-            echo "ERROR: Failed to get diff_url or it was null. Review GitHub API response."
-            exit 1
-          fi
-
-          # 2. 下载 diff 文件
-          curl -L -f -H "Authorization: token $GH_TOKEN" "$DIFF_URL" > pr.diff
-
-          # 3. 验证 pr.diff 文件内容
+          # 检查下载是否成功
           if [ ! -s pr.diff ]; then
-            echo "ERROR: pr.diff is empty or does not exist after download. Check curl command or permissions."
+            echo "::error::Failed to fetch PR diff. Check GitHub token permissions."
+            cat pr.diff || echo "(empty file)"
             exit 1
           fi
-          echo "PR diff fetched successfully."
+          
+          echo "PR diff fetched successfully. Size: $(wc -c < pr.diff) bytes"
 
       - name: Send PR diff to Claude API
         id: claude_review
@@ -54,30 +48,28 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           DIFF_RAW=$(cat pr.diff)
-          DIFF_TRUNCATED=$(echo "$DIFF_RAW" | head -c 12000) 
-
-          echo "DEBUG: Content of DIFF_TRUNCATED variable (first 500 chars):"
-          echo "$DIFF_TRUNCATED" | head -c 500 || true
-          echo ""
-          echo "DEBUG: Length of DIFF_TRUNCATED variable: ${#DIFF_TRUNCATED}"
-          echo ""
-
-          # 新增日志：打印完整的 DIFF_TRUNCATED 内容到临时文件并显示
-          echo "DEBUG: Full content of DIFF_TRUNCATED being sent to Claude:"
-          echo "$DIFF_TRUNCATED" > full_diff_to_claude.txt
-          cat full_diff_to_claude.txt
-          echo ""
-          echo "DEBUG: End of full DIFF_TRUNCATED content."
-          echo ""
-
-          if [ -z "$DIFF_TRUNCATED" ]; then
-            echo "WARNING: Diff content is empty. Claude will likely receive an empty diff."
+          
+          # 计算更合理的截断长度 - 避免太长的差异超出上下文窗口
+          MAX_DIFF_LENGTH=80000  # 设置一个更大但合理的上限
+          DIFF_LENGTH=${#DIFF_RAW}
+          
+          if [ $DIFF_LENGTH -gt $MAX_DIFF_LENGTH ]; then
+            echo "Diff too large ($DIFF_LENGTH bytes), truncating to $MAX_DIFF_LENGTH bytes"
+            DIFF_TRUNCATED=$(echo "$DIFF_RAW" | head -c $MAX_DIFF_LENGTH)
+            echo "WARNING: Diff was truncated. Review may be incomplete."
+          else
+            DIFF_TRUNCATED="$DIFF_RAW"
+            echo "Using complete diff ($DIFF_LENGTH bytes)"
           fi
 
-          # 构建 Claude 的用户消息内容，确保 ${DIFF_TRUNCATED} 正确展开
-          # 将整个提示词（不包含 DIFF_TRUNCATED 部分）作为单独的字符串参数
-          # 这样可以避免 Shell 解析复杂的多行字符串中的特殊字符
-          USER_PROMPT_STATIC_PART="这是一个 GitHub Pull Request 的代码差异。请对它进行全面审查，并以 **JSON 格式**提供详细、可操作的反馈。你的响应应包含以下顶级键：
+          # 验证API密钥是否存在
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::error::ANTHROPIC_API_KEY is not set. Please add this secret to your repository."
+            exit 1
+          fi
+          
+          # 构建用于Claude API的提示
+          PROMPT_START="这是一个 GitHub Pull Request 的代码差异。请对它进行全面审查，并以 **JSON 格式**提供详细、可操作的反馈。你的响应应包含以下顶级键：
             
             1.  \`summary\` (string): 本次 PR 的内容总结、目的和供其他评审人员关注的 1-2 个关键点。
             
@@ -85,11 +77,11 @@ jobs:
                 * \`file\` (string): 相关的相对文件路径。
                 * \`line\` (number, optional): 问题的起始行号（在修改后的文件中）。
                 * \`description\` (string): 对问题的描述，解释你为什么怀疑它，指出潜在的风险或需要进一步人工确认的地方。
-                * \`context_code\` (string, optional): 相关的代码片段，仅用 **Markdown 代码块**包裹 (例如 \`\`\`go\` 或 \`\`\`javascript\`)，不带 `suggestion`             标签，因为它不会被 GitHub 自动识别为可接受的建议。
+                * \`context_code\` (string, optional): 相关的代码片段，仅用 **Markdown 代码块**包裹 (例如 \`\`\`go\` 或 \`\`\`javascript\`)，不带 \`suggestion\`标签，因为它不会被 GitHub 自动识别为可接受的建议。
             
             3.  \`high_confidence_fixes\` (array of objects):
                 * \`file\` (string): 相关的相对文件路径。
-                * \`line\` (number): 建议修改的起始行号。**此行号至关重要：它必须是你的建议所针对的代码在 PR **修改后文件**             中**实际被修改、添加或删除**的行的精确起始行号。**如果该行在 PR 差异中没有被标记为添加、删除或修改，GitHub 将无法在此处放置行内评论。**
+                * \`line\` (number): 建议修改的起始行号。**此行号至关重要：它必须是你的建议所针对的代码在 PR **修改后文件**中**实际被修改、添加或删除**的行的精确起始行号。**如果该行在 PR 差异中没有被标记为添加、删除或修改，GitHub 将无法在此处放置行内评论。**
                 * \`description\` (string): 确认的问题的简洁描述。
                 * \`suggested_code\` (string): 包含修复建议的 Markdown 代码块。**你必须严格使用 ```suggestion` 格式**，例如：
                     \`\`\`
@@ -101,71 +93,61 @@ jobs:
                     ```
                     \`\`\`
                     **特别注意：**
-                    * 如果建议是删除一行，则只包含 `-` 开头的该行。
-                    * 如果建议是添加一行，则只包含 `+` 开头的该行。
-                    * 如果建议是修改一行，则包含 `-` 开头的原始行和 `+` 开头的修改后的行。
-                    * 如果建议修改多行，请确保 `suggested_code` 包含所有受影响的行，用 `-` 和 `+` 明确标记。
-                    * 请确保此代码块内容准确无误，代表了该行（或多行）的完整修改，可以直接在 GitHub UI 中点击“Accept suggestion”来应用。
+                    * 如果建议是删除一行，则只包含 \`-\` 开头的该行。
+                    * 如果建议是添加一行，则只包含 \`+\` 开头的该行。
+                    * 如果建议是修改一行，则包含 \`-\` 开头的原始行和 \`+\` 开头的修改后的行。
+                    * 如果建议修改多行，请确保 \`suggested_code\` 包含所有受影响的行，用 \`-\` 和 \`+\` 明确标记。
+                    * 请确保此代码块内容准确无误，代表了该行（或多行）的完整修改，可以直接在 GitHub UI 中点击\"Accept suggestion\"来应用。
             
             4.  \`other_suggestions\` (string, optional): 其他非关键但有益的通用改进建议。
             
-            请务必严格遵守 JSON 结构和 `suggested_code` 的 Markdown 格式。请避免在 `suggested_code` 中包含额外的换行符，除非它是代码的一部分。
+            请务必严格遵守 JSON 结构和 \`suggested_code\` 的 Markdown 格式。请避免在 \`suggested_code\` 中包含额外的换行符，除非它是代码的一部分。
             
             代码差异：
             ```diff
             "
+          
+          PROMPT_END="\n```"
+          
+          # 创建完整的提示
+          FULL_PROMPT="${PROMPT_START}${DIFF_TRUNCATED}${PROMPT_END}"
 
-          if [ -z "$ANTHROPIC_API_KEY" ]; then
-            echo "ERROR: ANTHROPIC_API_KEY is not set. Cannot call Claude API."
-            exit 1
-          fi 
-
-          # 构建完整的 JSON payload，并直接通过管道传递给 curl
-          jq -n \
-            --arg model "claude-3-7-sonnet-20250219" \
-            --arg max_tokens_str "15000" \
-            --arg temperature_str "0.2" \
-            --arg system_message "你是一位专业的 AI 代码评审员，专注于为 GitHub Pull Request 提供类似 GitHub Copilot 的高质量、可操作的审查。你的反馈应清晰、结构化，并以 **JSON 格式**严格提供。**务必使用 GitHub `suggestion` Markdown 格式**来提供代码修复建议。你的目标是识别潜在的错误、改进、最佳实践违规、性能瓶颈和安全问题。请确保你的 JSON 结果是完整的且可解析的。" \
-            --arg user_prompt_static "$USER_PROMPT_STATIC_PART" \
-            --arg diff_content_val "$DIFF_TRUNCATED" \
-            '{
-              "model": $model,
-              "max_tokens": ($max_tokens_str | tonumber),
-              "temperature": ($temperature_str | tonumber),
-              "system": $system_message,
-              "messages": [
-                {
-                  "role": "user",
-                  "content": ($user_prompt_static + $diff_content_val + "\n```") # Concatenate the static part, diff, and close the diff block
-                }
-              ]
-            }' | curl -sS https://api.anthropic.com/v1/messages \
+          # 将提示保存到文件以便查看
+          echo "$FULL_PROMPT" > claude_prompt.txt
+          
+          # 调用Claude API，使用最新API版本
+          curl -s https://api.anthropic.com/v1/messages \
             -H "x-api-key: $ANTHROPIC_API_KEY" \
             -H "anthropic-version: 2023-06-01" \
             -H "content-type: application/json" \
-            -d @- > review_response.json # -d @- 表示从标准输入读取数据
-
-          # 确保 review_response.json 已经生成，并且是有效的 JSON
-          if ! [ -s review_response.json ] || ! jq -e '.' review_response.json > /dev/null; then
-              echo "ERROR: Claude API response is not valid JSON or file is empty. Response was:"
-              cat review_response.json || echo "File is empty or not found."
-              exit 1
-          fi
-
-          # 检查 API 响应是否包含错误字段
-          if jq -e '.error.type' review_response.json > /dev/null; then
-            echo "ERROR: Claude API returned an error:"
-            jq '.error | .type + ": " + .message' review_response.json
+            -d '{
+              "model": "claude-3-sonnet-20240229",
+              "max_tokens": 15000,
+              "temperature": 0.2,
+              "system": "你是一位专业的 AI 代码评审员，专注于为 GitHub Pull Request 提供类似 GitHub Copilot 的高质量、可操作的审查。你的反馈应清晰、结构化，并以 **JSON 格式**严格提供。**务必使用 GitHub `suggestion` Markdown 格式**来提供代码修复建议。你的目标是识别潜在的错误、改进、最佳实践违规、性能瓶颈和安全问题。请确保你的 JSON 结果是完整的且可解析的。",
+              "messages": [
+                {
+                  "role": "user",
+                  "content": '"${FULL_PROMPT//\"/\\\"}"'
+                }
+              ]
+            }' > review_response.json
+          
+          # 验证API响应
+          if ! jq -e '.' review_response.json > /dev/null 2>&1; then
+            echo "::error::Claude API returned invalid JSON response"
+            cat review_response.json
             exit 1
           fi
-
-          echo "Claude review completed. Response saved to review_response.json."
-
-      - name: Debug Claude API Response JSON
-        run: |
-          echo "Content of review_response.json:"
-          cat review_response.json
-          echo ""
+          
+          # 检查API错误
+          if jq -e '.error' review_response.json > /dev/null 2>&1; then
+            echo "::error::Claude API returned an error:"
+            jq '.error' review_response.json
+            exit 1
+          fi
+          
+          echo "Claude review completed successfully."
 
       - name: Post Structured PR Comments
         uses: actions/github-script@v6
@@ -173,123 +155,127 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const fs = require('fs');
-            const rawClaudeResponse = JSON.parse(fs.readFileSync('review_response.json', 'utf8'));
+            
+            // 加载和验证Claude响应
+            let rawClaudeResponse;
+            try {
+              rawClaudeResponse = JSON.parse(fs.readFileSync('review_response.json', 'utf8'));
+              console.log('Successfully loaded Claude API response');
+            } catch (error) {
+              console.error('Failed to parse review_response.json:', error);
+              core.setFailed(`Error parsing Claude API response: ${error.message}`);
+              return;
+            }
+            
+            if (!rawClaudeResponse.content || !Array.isArray(rawClaudeResponse.content) || 
+                rawClaudeResponse.content.length === 0 || !rawClaudeResponse.content[0].text) {
+              console.error('Invalid Claude API response format:', JSON.stringify(rawClaudeResponse));
+              core.setFailed('Claude API response does not contain expected content structure');
+              return;
+            }
+            
             const prNumber = context.payload.pull_request.number;
             const repo = context.repo;
             const headSha = context.payload.pull_request.head.sha;
 
             console.log(`Processing review data for PR #${prNumber}...`);
 
-            // Helper function to escape characters that would break JavaScript template literals
-            // This function escapes backslashes, backticks, and dollar signs.
+            // 辅助函数：转义模板字符
             function escapeForTemplateLiteral(str) {
-              if (typeof str !== 'string') return str; 
-              return str.replace(/\\/g, '\\\\')    // Escape literal backslashes first
-                         .replace(/`/g, '\\`')     // Then escape backticks
-                         .replace(/\$/g, '\\$');   // Then escape dollar signs
+              if (typeof str !== 'string') return '';
+              return str.replace(/\\/g, '\\\\')
+                        .replace(/`/g, '\\`')
+                        .replace(/\$/g, '\\$');
             }
 
+            // 提取并解析Claude的JSON响应
             let reviewData;
             try {
-              // 提取并清理 Claude 响应中的 JSON 字符串
-              let jsonString = rawClaudeResponse.content[0].text;
-              // 移除 Markdown 代码块的开头和结尾
-              jsonString = jsonString.replace(/^```json\n/, '').replace(/\n```$/, '');
+              // 提取Claude响应中的JSON
+              let jsonText = rawClaudeResponse.content[0].text;
               
-              reviewData = JSON.parse(jsonString);
-              console.log('Successfully parsed Claude review JSON.');
+              // 删除可能的Markdown代码块包装
+              jsonText = jsonText.replace(/^```json\s*/, '')
+                               .replace(/^```\s*/, '')
+                               .replace(/\s*```$/, '');
+                               
+              console.log('Extracted JSON text first 100 chars:', jsonText.substring(0, 100));
+              
+              reviewData = JSON.parse(jsonText);
+              console.log('Successfully parsed Claude review JSON');
             } catch (error) {
-              console.error('Failed to parse Claude review JSON from content[0].text:', error.message);
+              console.error('Failed to parse Claude review JSON:', error);
+              // 发布错误信息作为PR评论
               await github.rest.issues.createComment({
                 owner: repo.owner,
                 repo: repo.repo,
                 issue_number: prNumber,
-                body: `Claude review failed due to invalid JSON response. Please check workflow logs for details.\n\nRaw response:\n\`\`\`json\n${JSON.stringify(rawClaudeResponse, null, 2)}\n\`\`\``
+                body: `**Claude 代码评审失败**\n\nJSON解析错误: ${error.message}\n\n请检查工作流日志获取更多信息。`
               });
-              process.exit(1);
+              core.setFailed(`Failed to parse Claude JSON response: ${error.message}`);
+              return;
             }
 
-            let mainCommentBody = "";
+            // 构造主评论内容
+            let mainCommentBody = "# Claude PR 代码评审\n\n";
 
-            // 1. 本次 PR 概述与关注点
+            // 1. PR概述与关注点
             if (reviewData.summary) {
-              console.log('DEBUG: Review Summary (raw):', reviewData.summary); 
-              mainCommentBody += `## 1. 本次 PR 概述与关注点：\n${escapeForTemplateLiteral(reviewData.summary)}\n\n`;
+              mainCommentBody += `## 1. PR概述与关注点\n\n${reviewData.summary}\n\n`;
             }
 
-            // 2. 存疑但无法确认的问题
+            // 2. 低置信度问题
             if (reviewData.low_confidence_issues && reviewData.low_confidence_issues.length > 0) {
-              console.log('DEBUG: Low Confidence Issues (raw):', JSON.stringify(reviewData.low_confidence_issues, null, 2)); 
-              mainCommentBody += `## 2. 存疑但无法确认的问题：\n\n`;
+              mainCommentBody += `## 2. 需要注意的问题\n\n`;
               reviewData.low_confidence_issues.forEach(issue => {
-                console.log('DEBUG:   Issue file:', issue.file, 'line:', issue.line); 
-                console.log('DEBUG:   Issue description (raw):', issue.description); 
-                console.log('DEBUG:   Issue context_code (raw):', issue.context_code); 
-
-                let issueLine = issue.file && issue.line ? ` (Line: ${issue.line} in \`${escapeForTemplateLiteral(issue.file)}\`)` : "";
-                mainCommentBody += `- **${escapeForTemplateLiteral(issue.description)}**${issueLine}\n`;
-                // context_code is expected to be a Markdown code block, so insert directly without additional escaping.
-                // It's already correctly formatted by Claude within the JSON string.
+                const locationInfo = issue.file && issue.line 
+                  ? `(\`${issue.file}\` 第 ${issue.line} 行)` 
+                  : issue.file ? `(\`${issue.file}\`)` : '';
+                  
+                mainCommentBody += `### ${escapeForTemplateLiteral(issue.description)} ${locationInfo}\n\n`;
+                
                 if (issue.context_code) {
-                  // Ensure context_code is properly indented if it's a multi-line string
-                  mainCommentBody += `  ${issue.context_code.replace(/\n/g, '\n  ')}\n`; // Add 2 spaces indent for context_code lines
+                  mainCommentBody += `${issue.context_code}\n\n`;
                 }
-                mainCommentBody += "\n";
               });
-              mainCommentBody += "---\n\n"; // 添加分隔线
             }
 
-            // 4. 其他改进建议（如果有的话）
+            // 注明高置信度修复建议发布为行内评论
+            mainCommentBody += `## 3. 代码修复建议\n\n高置信度修复建议已作为单独的行内评论发布，请查看具体代码行。\n\n`;
+
+            // 4. 其他改进建议
             if (reviewData.other_suggestions) {
-              console.log('DEBUG: Other Suggestions (raw):', reviewData.other_suggestions); 
-              mainCommentBody += `## 4. 其他改进建议：\n${escapeForTemplateLiteral(reviewData.other_suggestions)}\n\n`;
+              mainCommentBody += `## 4. 其他改进建议\n\n${reviewData.other_suggestions}\n\n`;
             }
 
-
-            // 统一发布主要评论
-            if (mainCommentBody.trim() !== "") {
-              try {
-                await github.rest.issues.createComment({
-                  owner: repo.owner,
-                  repo: repo.repo,
-                  issue_number: prNumber,
-                  body: mainCommentBody
-                });
-                console.log('Main PR summary and low-confidence issues posted successfully.');
-              }
-              catch (error) {
-                console.error('Failed to post main PR comment:', error.message);
-              }
-            } else {
-              console.log('No content for main PR comment (summary, low-confidence issues, other suggestions were empty).');
+            // 发布主评论
+            try {
+              await github.rest.issues.createComment({
+                owner: repo.owner,
+                repo: repo.repo,
+                issue_number: prNumber,
+                body: mainCommentBody
+              });
+              console.log('Main PR review comment posted successfully');
+            } catch (error) {
+              console.error('Failed to post main PR comment:', error);
+              core.setFailed(`Error posting main PR comment: ${error.message}`);
+              return;
             }
 
-
-            // 3. 确认的问题与修复建议 (Post as inline review comments with 'Accept suggestion' button)
+            // 处理高置信度修复建议为行内评论
             if (reviewData.high_confidence_fixes && reviewData.high_confidence_fixes.length > 0) {
-              console.log('Posting high-confidence fixes as inline suggestions...');
-              console.log('DEBUG: High Confidence Fixes (raw):', JSON.stringify(reviewData.high_confidence_fixes, null, 2)); 
-
+              console.log(`Processing ${reviewData.high_confidence_fixes.length} high confidence fixes...`);
+              
               for (const fix of reviewData.high_confidence_fixes) {
-                console.log('DEBUG: --- Processing individual high-confidence fix ---'); 
-                console.log('DEBUG: Fix file:', fix.file); 
-                console.log('DEBUG: Fix line:', fix.line); 
-                console.log('DEBUG: Fix description (raw):', fix.description); 
-                console.log('DEBUG: Fix suggested_code (raw):', fix.suggested_code); 
-
                 if (!fix.file || !fix.line || !fix.suggested_code) {
-                  console.warn(`Skipping invalid high-confidence fix: Missing file, line, or suggested_code. Fix details: ${JSON.stringify(fix)}`);
+                  console.warn(`Skipping invalid fix: Missing required fields`);
                   continue;
                 }
 
-                // Construct the comment body with the suggestion block
-                // suggested_code is expected to be a Markdown suggestion block.
-                // We only escape the description, as suggested_code already contains
-                // its own Markdown formatting and internal escaping by Claude.
-                const commentBody = `${escapeForTemplateLiteral(fix.description)}\n\n${fix.suggested_code}`;
+                // 构建评论内容
+                const commentBody = `${fix.description || 'Suggested fix'}\n\n${fix.suggested_code}`;
                 
-                console.log('DEBUG: Generated commentBody (before API call):', commentBody); 
-
                 try {
                   await github.rest.pulls.createReviewComment({
                     owner: repo.owner,
@@ -297,26 +283,28 @@ jobs:
                     pull_number: prNumber,
                     commit_id: headSha,
                     path: fix.file,
-                    line: fix.line, // This is the line in the NEW file where the suggestion applies
-                    side: 'RIGHT', // Suggestion applies to the RIGHT (new) side of the diff
-                    body: commentBody
+                    line: fix.line,
+                    body: commentBody,
+                    side: 'RIGHT'
                   });
-                  console.log(`Posted inline suggestion for ${fix.file} at line ${fix.line}.`);
+                  console.log(`Posted inline suggestion for ${fix.file} at line ${fix.line}`);
                 } catch (error) {
-                  console.error(`Failed to post inline suggestion for ${fix.file} at line ${fix.line}:`, error.message);
-                  console.error('DEBUG: Comment body that caused error (for this fix):', commentBody); 
-                  // FALLBACK: Post as a regular comment if inline fails
-                  await github.rest.issues.createComment({
-                    owner: repo.owner,
-                    repo: repo.repo,
-                    issue_number: prNumber,
-                    body: `**无法在代码行上发布建议：**\n\n\`${fix.file}\` (Line: ${fix.line})\n\n${commentBody}\n\n_原因：通常是建议的行不在 PR 差异中被修改的行范围内，或者格式不完全符合 GitHub 要求。请手动审查。_`
-                  });
-                  console.log(`Posted fallback comment for ${fix.file} at line ${fix.line}.`);
+                  console.error(`Failed to post inline comment for ${fix.file}:${fix.line}:`, error);
+                  
+                  // 发布回退评论
+                  try {
+                    await github.rest.issues.createComment({
+                      owner: repo.owner,
+                      repo: repo.repo,
+                      issue_number: prNumber,
+                      body: `**无法在 \`${fix.file}\` 的第 ${fix.line} 行发布行内建议**\n\n${commentBody}\n\n> 注：此建议无法作为行内评论发布，可能是因为该行不在PR差异范围内。`
+                    });
+                    console.log(`Posted fallback comment for ${fix.file}:${fix.line}`);
+                  } catch (fallbackError) {
+                    console.error(`Failed to post fallback comment:`, fallbackError);
+                  }
                 }
               }
-            } else {
-              console.log('No high-confidence fixes to post as inline suggestions.');
             }
 
-            console.log('All comments processing completed.');
+            console.log('PR review processing completed');
