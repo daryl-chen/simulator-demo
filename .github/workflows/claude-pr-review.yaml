@@ -31,7 +31,7 @@ jobs:
           # Directly fetch PR diff
           curl -sSL -H "Authorization: Bearer $GH_TOKEN" \
                -H "Accept: application/vnd.github.v3.diff" \
-               "https://api.github.com/repos/$REPO/pulls/$PR_NUMBER" > pr.diff
+               "[https://api.github.com/repos/$REPO/pulls/$PR_NUMBER](https://api.github.com/repos/$REPO/pulls/$PR_NUMBER)" > pr.diff
 
           if [ ! -s pr.diff ]; then
             echo "::error::Failed to fetch PR diff"
@@ -125,7 +125,7 @@ jobs:
             }
                         
             data = {
-                "model": "claude-3-7-sonnet-20250219",
+                "model": "claude-3-sonnet-20240229",
                 "max_tokens": 15000,
                 "temperature": 0.2,
                 "system": "你是一位专业的 AI 代码评审员，专注于为 GitHub Pull Request 提供类似 GitHub Copilot 的高质量、可操作的审查。你的反馈应清晰、结构化，并以 **JSON 格式**严格提供。**务必使用 GitHub `suggestion` Markdown 格式**来提供代码修复建议。你的目标是识别潜在的错误、改进、最佳实践违规、性能瓶颈和安全问题。请确保你的 JSON 结果是完整的且可解析的。",
@@ -139,7 +139,7 @@ jobs:
                         
             # Send request
             print("Sending request to Claude API...")
-            response = requests.post("https://api.anthropic.com/v1/messages", headers=headers, json=data)
+            response = requests.post("[https://api.anthropic.com/v1/messages](https://api.anthropic.com/v1/messages)", headers=headers, json=data)
                         
             # Check status code
             print(f"API response status code: {response.status_code}")
@@ -163,13 +163,22 @@ jobs:
                 exit(1)
                         
             # Attempt to extract JSON more robustly
-            # Look for a JSON block first, then try to parse the whole text if no block is found
-            json_match = re.search(r"```json\s*(.+?)```", review_text, re.DOTALL)
-            if json_match:
-                json_text = json_match.group(1).strip()
+            # Look for the first '{' and the last '}' to define the JSON boundaries
+            start_brace = review_text.find('{')
+            end_brace = review_text.rfind('}')
+
+            if start_brace != -1 and end_brace != -1 and end_brace > start_brace:
+                json_text = review_text[start_brace : end_brace + 1]
+                # Clean up potential trailing newlines/spaces outside JSON block
+                json_text = json_text.strip()
             else:
-                # If no JSON block is found, assume the entire content is JSON
-                json_text = review_text.strip()
+                # Fallback to current regex if brace method fails, or assume whole text
+                json_match = re.search(r"```json\s*(.+?)```", review_text, re.DOTALL)
+                if json_match:
+                    json_text = json_match.group(1).strip()
+                else:
+                    # If no JSON block is found, assume the entire content is JSON
+                    json_text = review_text.strip()
                         
             try:
                 # Validate JSON
@@ -179,11 +188,13 @@ jobs:
                 print("JSON extracted and validated successfully")
             except json.JSONDecodeError as e:
                 print(f"Error parsing JSON: {e}")
-                print("Raw content received (first 5000 chars):")
-                print(json_text[:5000])
+                print("Raw content received (first 5000 chars):") 
+                print(review_text[:5000]) # Print the full review_text that caused the error
                 exit(1)
             except Exception as e:
                 print(f"An unexpected error occurred: {e}")
+                print("Raw content received (first 5000 chars):") # Also log for other errors
+                print(review_text[:5000])
                 exit(1)
         run: |
           # 将环境变量中的 Python 脚本内容写入文件
