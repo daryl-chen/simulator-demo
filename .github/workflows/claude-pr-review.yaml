@@ -74,9 +74,17 @@ jobs:
                 * `file` (string): 相关的相对文件路径。
                 * `line` (number): 建议修改的起始行号。**此行号至关重要：它必须是你的建议所针对的代码在 PR **修改后文件** 中**实际被修改、添加或删除**的行的精确起始行号。**如果该行在 PR 差异中没有被标记为添加、删除或修改，GitHub 将无法在此处放置行内评论。**
                 * `description` (string): 确认的问题的简洁描述。
-                * `suggested_code` (string): 包含修复建议的 Markdown 代码块。**你必须严格使用 ```suggestion 格式。注意：`suggested_code` 的 JSON 字符串值内部，只包含实际的 diff 行内容，不要包含 ```suggestion` 或 ``` 标记。** `suggestion` 块内部必须是给出最终的修改结果。例如：
-                    **当建议是删除某行（或某几行时），`suggested_code` 字段当 JSON 字符串值应该为：```suggestion\n```（注意，除去```suggestion\n```外并没任何其他内容，代表了删除）。**
-                    **当建议是修改某行的内容，比如：想要将 `  private long id;` 修改为 `  public long id;`，则`suggested_code` 字段当 JSON 字符串值应该为：```suggestion\n     public Long id;```（除去```suggestion\n```外直接给出了最终的修改建议，包括缩进、换行）。**
+                * `suggested_code` (string): 包含修复建议的 Markdown 代码块。
+                    **你必须严格使用 ```suggestion 格式。注意：`suggested_code` 的 JSON 字符串值内部，只包含实际的**最终代码行内容**，不要包含 ```suggestion` 或 ``` 标记，也不要包含 `+`、`-` 或 ` ` (空格) 前缀。GitHub 会根据 `suggested_code` 的内容和 `line` 自动判断并渲染 diff。**
+                    
+                    **处理方式分为两种：**
+                    * **A. 仅删除行：** 如果建议是**删除一行或多行代码**，则 `suggested_code` 字段的值必须是**空字符串 `\"\"`**。此时 `line` 字段应指向要删除的**起始行号**。
+                        * 示例：要删除 `private String oldField;`，则 `suggested_code` 的值应为：`""`。
+                    * **B. 添加或修改行：** 如果建议是添加或修改代码（包括删除部分并添加新内容），则 `suggested_code` 字段的值必须是**替换后的最终代码内容**，不带任何 `+`、`-` 或 ` ` (空格) 前缀。
+                        * 示例 1：将 `private long id;` 修改为 `public Long id;`，则 `suggested_code` 的值应为：`"    public Long id;"`
+                        * 示例 2：添加新行 `console.log("New log");`，则 `suggested_code` 的值应为：`"    console.log(\\\"New log\\\");"`
+                    
+                    **极其重要：此字段的字符串值内部的任何双引号 `"` 或反斜杠 `\` 都必须严格进行 JSON 转义 (`\"` 或 `\\`)，并且换行符必须使用 `\n` 来表示，以确保整个 JSON 字符串的有效性。**
             
             4.  `other_suggestions` (string, optional): 其他非关键但有益的通用改进建议。
             
@@ -222,33 +230,23 @@ jobs:
               return str.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$/g, '\\$');
             }
 
-            // Function to ensure suggested_code is in proper diff format for GitHub
-            function formatSuggestedCodeForGitHub(code) {
-              if (!code) return '';
-              // Remove any leading/trailing ```suggestion or ``` if present
-              let cleanedCode = code.replace(/^```suggestion\s*\n?/, '').replace(/\n?```$/, '');
-              
-              const lines = cleanedCode.split('\n');
-              const formattedLines = [];
-              let isPureDeletion = true; // Flag to check if all lines are deletions
-              
-              for (let line of lines) {
-                if (line.startsWith('+') || line.startsWith(' ')) {
-                  isPureDeletion = false; // Found an addition or context line
-                } else if (!line.startsWith('-')) {
-                  // If it doesn't start with +, -, or space, and not already a deletion,
-                  // it's likely a new line that should be an addition.
-                  formattedLines.push('+ ' + line);
-                  isPureDeletion = false; // It's not a pure deletion if we add a '+'
-                } else {
-                  // Line starts with '-', keep as is
-                  formattedLines.push(line);
-                }
+            // Function to prepare suggested_code content for GitHub's suggestion block
+            // This function now primarily cleans up any accidental markdown wrappers
+            // and ensures the content is safe for embedding in the template literal.
+            // It does NOT add +/ - prefixes, as those are handled by GitHub's UI.
+            function prepareSuggestedCodeForGitHub(code) {
+              if (typeof code !== 'string') return ''; // Ensure code is a string
+
+              // If the code is an empty string, it's intended for deletion, return as is.
+              if (code === '') {
+                return ''; 
               }
+
+              // Remove any leading/trailing ```suggestion or ``` from Claude's output if present
+              let cleanedCode = code.replace(/^```(?:suggestion|[\w]+)\s*\n?/, '').replace(/\n?```$/, '');
               
-              // If it's a pure deletion, return the lines as is.
-              // Otherwise, return the potentially prefixed lines.
-              return isPureDeletion ? cleanedCode : formattedLines.join('\n');
+              // Escape the cleaned code for embedding in the JavaScript template literal
+              return escapeForTemplateLiteral(cleanedCode);
             }
 
             // 读取提取的JSON
@@ -334,7 +332,7 @@ jobs:
               console.log(`Processing ${reviewData.high_confidence_fixes.length} code fix suggestions...`);
               
               for (const fix of reviewData.high_confidence_fixes) {
-                if (!fix.file || !fix.line || !fix.suggested_code) {
+                if (!fix.file || !fix.line || fix.suggested_code === undefined) { // Check for undefined suggested_code too
                   console.log(`Skipping invalid fix (missing required fields):`, fix);
                   continue;
                 }
@@ -342,78 +340,57 @@ jobs:
                 try {
                   console.log(`--- Attempting to post inline review comment for ${fix.file}:${fix.line} ---`);
                   
-                  // Format suggested_code to ensure it has proper diff prefixes
-                  const formattedSuggestedCode = formatSuggestedCodeForGitHub(fix.suggested_code);
+                  // Prepare suggested_code content for GitHub's suggestion block (no diff prefixes)
+                  const preparedSuggestedCode = prepareSuggestedCodeForGitHub(fix.suggested_code);
 
                   let commentBody;
-                  // Check if it's a pure deletion based on formatSuggestedCodeForGitHub's internal logic
-                  // Note: The formatSuggestedCodeForGitHub function now returns the original code
-                  // if it detects it's a pure deletion. So we need to check the *original* suggested_code
-                  // to see if it starts with '-' and no other diff indicators.
-                  const isPureDeletion = fix.suggested_code.split('\n').filter(line => line.trim() !== '').every(line => line.startsWith('-'));
-
-                  if (isPureDeletion) {
-                      // For pure deletions, post as a regular comment to avoid GitHub's confusing UI
-                      // Remove the '-' prefix for display in the regular comment for clarity
-                      const displayCode = fix.suggested_code.split('\n').map(line => line.startsWith('-') ? line.substring(1).trim() : line.trim()).join('\n');
-                      commentBody = `${escapeForTemplateLiteral(fix.description)}\n\n**建议删除此行：**\n\`\`\`\n${escapeForTemplateLiteral(displayCode)}\n\`\`\`\n（此为删除建议，请手动应用或复制删除。）`;
-                      
-                      await github.rest.issues.createComment({ // Post as regular comment
+                  // The body will always contain the ```suggestion wrapper, potentially empty for deletions
+                  commentBody = `${escapeForTemplateLiteral(fix.description)}\n\n\`\`\`suggestion\n${preparedSuggestedCode}\n\`\`\``; 
+                  
+                  // Print inline comment payload for debugging
+                  const inlineCommentPayload = {
+                    ...context.repo,
+                    pull_number: prNumber,
+                    commit_id: headSha,
+                    path: escapeForTemplateLiteral(fix.file), // Escape path for logging/safety
+                    line: parseInt(fix.line, 10),
+                    side: 'RIGHT',
+                    body: commentBody
+                  };
+                  console.log('Inline Comment Payload:', JSON.stringify(inlineCommentPayload, null, 2)); 
+                  
+                  const lineNumber = parseInt(fix.line, 10);
+                  if (isNaN(lineNumber)) {
+                      console.error(`Invalid line number for ${fix.file}: ${fix.line}`);
+                      // Fallback to a regular comment if line number is invalid
+                      console.log(`--- Attempting to post fallback comment for invalid line number for ${escapeForTemplateLiteral(fix.file)}:${fix.line} ---`);
+                      const fallbackBody = `**注意：** 无法在 \`${escapeForTemplateLiteral(fix.file)}\` 第 ${fix.line} 行发布行内评论，因为行号无效。\n\n${escapeForTemplateLiteral(fix.description)}\n\n\`\`\`suggestion\n${preparedSuggestedCode}\n\`\`\`\n\n> 这通常是因为该行不在PR差异中或已被其他修改影响。`;
+                      console.log('Fallback Comment Body (Invalid Line):', JSON.stringify(fallbackBody)); 
+                      await github.rest.issues.createComment({
                           ...context.repo,
-                          issue_number: prNumber, // Post on the PR issue directly
-                          body: commentBody
+                          issue_number: prNumber,
+                          body: fallbackBody
                       });
-                      console.log('Posted deletion as regular comment. Body:', JSON.stringify(commentBody));
-
-                  } else {
-                      // For additions or modifications, continue with inline suggestion
-                      commentBody = `${escapeForTemplateLiteral(fix.description)}\n\n\`\`\`suggestion\n${escapeForTemplateLiteral(formattedSuggestedCode)}\n\`\`\``;
-                      
-                      // Print inline comment payload for debugging
-                      const inlineCommentPayload = {
-                        ...context.repo,
-                        pull_number: prNumber,
-                        commit_id: headSha,
-                        path: escapeForTemplateLiteral(fix.file), // Escape path for logging/safety
-                        line: parseInt(fix.line, 10),
-                        side: 'RIGHT',
-                        body: commentBody
-                      };
-                      console.log('Inline Comment Payload:', JSON.stringify(inlineCommentPayload, null, 2)); 
-                      
-                      const lineNumber = parseInt(fix.line, 10);
-                      if (isNaN(lineNumber)) {
-                          console.error(`Invalid line number for ${fix.file}: ${fix.line}`);
-                          // Fallback to a regular comment if line number is invalid
-                          console.log(`--- Attempting to post fallback comment for invalid line number for ${escapeForTemplateLiteral(fix.file)}:${fix.line} ---`);
-                          const fallbackBody = `**注意：** 无法在 \`${escapeForTemplateLiteral(fix.file)}\` 第 ${fix.line} 行发布行内评论，因为行号无效。\n\n${escapeForTemplateLiteral(fix.description)}\n\n\`\`\`suggestion\n${escapeForTemplateLiteral(formattedSuggestedCode)}\n\`\`\`\n\n> 这通常是因为该行不在PR差异中或已被其他修改影响。`;
-                          console.log('Fallback Comment Body (Invalid Line):', JSON.stringify(fallbackBody)); 
-                          await github.rest.issues.createComment({
-                              ...context.repo,
-                              issue_number: prNumber,
-                              body: fallbackBody
-                          });
-                          continue;
-                      }
+                      continue;
+                  }
 
 
-                      await github.rest.pulls.createReviewComment({
-                        ...context.repo,
-                        pull_number: prNumber,
-                        commit_id: headSha,
-                        path: fix.file, // Path needs to be the original for API call
-                        line: lineNumber,
-                        side: 'RIGHT',
-                        body: commentBody // Use the already constructed and escaped commentBody
-                      });
-                  } // End else (not pure deletion)
+                  await github.rest.pulls.createReviewComment({
+                    ...context.repo,
+                    pull_number: prNumber,
+                    commit_id: headSha,
+                    path: fix.file, // Path needs to be the original for API call
+                    line: lineNumber,
+                    side: 'RIGHT',
+                    body: commentBody // Use the already constructed and escaped commentBody
+                  });
                 } catch (error) {
                   console.error(`Failed to post review comment for ${fix.file}:${fix.line}:`, error);
                   
                   // Post fallback comment
                   try {
                     console.log(`--- Attempting to post fallback comment due to error for ${escapeForTemplateLiteral(fix.file)}:${fix.line} ---`);
-                    const fallbackBody = `**注意：** 无法在 \`${escapeForTemplateLiteral(fix.file)}\` 第 ${fix.line} 行发布行内评论。\n\n${escapeForTemplateLiteral(fix.description)}\n\n\`\`\`suggestion\n${escapeForTemplateLiteral(formattedSuggestedCode)}\n\`\`\`\n\n> 这通常是因为该行不在PR差异中或已被其他修改影响。`;
+                    const fallbackBody = `**注意：** 无法在 \`${escapeForTemplateLiteral(fix.file)}\` 第 ${fix.line} 行发布行内评论。\n\n${escapeForTemplateLiteral(fix.description)}\n\n\`\`\`suggestion\n${preparedSuggestedCode}\n\`\`\`\n\n> 这通常是因为该行不在PR差异中或已被其他修改影响。`;
                     console.log('Fallback Comment Body (Error):', JSON.stringify(fallbackBody)); 
                     await github.rest.issues.createComment({
                       ...context.repo,
