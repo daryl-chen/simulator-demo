@@ -11,7 +11,6 @@ public class MqConsumerProperties {
 
     private String group;
     private String id;
-    public String id;
 
     public String getNamesrvAddr() {
         return namesrvAddr;
