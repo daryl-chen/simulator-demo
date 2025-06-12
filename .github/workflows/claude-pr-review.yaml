@@ -31,7 +31,7 @@ jobs:
           # Directly fetch PR diff
           curl -sSL -H "Authorization: Bearer $GH_TOKEN" \
                -H "Accept: application/vnd.github.v3.diff" \
-               "[https://api.github.com/repos/$REPO/pulls/$PR_NUMBER](https://api.github.com/repos/$REPO/pulls/$PR_NUMBER)" > pr.diff
+               "https://api.github.com/repos/$REPO/pulls/$PR_NUMBER" > pr.diff
 
           if [ ! -s pr.diff ]; then
             echo "::error::Failed to fetch PR diff"
@@ -58,6 +58,7 @@ jobs:
           echo "Diff saved to diff_content.txt ($(wc -c < diff_content.txt) bytes)"
           
           # Create user prompt file, avoiding shell parsing issues
+          # 强调 JSON 格式和 `context_code` 的正确性，并提供示例
           cat > user_prompt.txt << 'EOT'
             这是一个 GitHub Pull Request 的代码差异。请对它进行全面审查，并以 **JSON 格式**提供详细、可操作的反馈。你的响应应包含以下顶级键：
             
@@ -67,7 +68,7 @@ jobs:
                 * `file` (string): 相关的相对文件路径。
                 * `line` (number, optional): 问题的起始行号（在修改后的文件中）。
                 * `description` (string): 对问题的描述，解释你为什么怀疑它，指出潜在的风险或需要进一步人工确认的地方。
-                * `context_code` (string, optional): 相关的代码片段，仅用 **Markdown 代码块**包裹 (例如 ```go 或 ```javascript)，不带 `suggestion` 标签，因为它不会被 GitHub 自动识别为可接受的建议。
+                * `context_code` (string, optional): 相关的代码片段，仅用 **Markdown 代码块**包裹 (例如 ```go 或 ```javascript)。**极其重要：此字段的字符串值内部的任何双引号 `"` 或反斜杠 `\` 都必须严格进行 JSON 转义 (`\"` 或 `\\`)，并且换行符必须使用 `\n` 来表示，以确保整个 JSON 字符串的有效性。例如，如果你的代码片段是：`String msg = "Hello World";\nSystem.out.println(msg);`，那么 `context_code` 的值应为：`"```java\\nString msg = \\\"Hello World\\\";\\nSystem.out.println(msg);\\n```"`**
             
             3.  `high_confidence_fixes` (array of objects):
                 * `file` (string): 相关的相对文件路径。
@@ -126,9 +127,10 @@ jobs:
                         
             data = {
                 "model": "claude-3-sonnet-20240229",
-                "max_tokens": 15000,
+                "max_tokens": 20000, # 提高 max_tokens
                 "temperature": 0.2,
-                "system": "你是一位专业的 AI 代码评审员，专注于为 GitHub Pull Request 提供类似 GitHub Copilot 的高质量、可操作的审查。你的反馈应清晰、结构化，并以 **JSON 格式**严格提供。**务必使用 GitHub `suggestion` Markdown 格式**来提供代码修复建议。你的目标是识别潜在的错误、改进、最佳实践违规、性能瓶颈和安全问题。请确保你的 JSON 结果是完整的且可解析的。",
+                # 强调严格 JSON 格式和转义
+                "system": "你是一位专业的 AI 代码评审员，专注于为 GitHub Pull Request 提供类似 GitHub Copilot 的高质量、可操作的审查。你的反馈应清晰、结构化，并以 **JSON 格式**严格提供。**务必使用 GitHub `suggestion` Markdown 格式**来提供代码修复建议。你的目标是识别潜在的错误、改进、最佳实践违规、性能瓶颈和安全问题。请确保你的 JSON 结果是完整的且可解析的。**所有 JSON 字符串值都必须经过正确的 JSON 转义，尤其是多行文本或包含特殊字符（如引号 `\"`、反斜杠 `\\`）的字符串。**",
                 "messages": [
                     {
                         "role": "user",
@@ -139,7 +141,7 @@ jobs:
                         
             # Send request
             print("Sending request to Claude API...")
-            response = requests.post("[https://api.anthropic.com/v1/messages](https://api.anthropic.com/v1/messages)", headers=headers, json=data)
+            response = requests.post("https://api.anthropic.com/v1/messages", headers=headers, json=data)
                         
             # Check status code
             print(f"API response status code: {response.status_code}")
