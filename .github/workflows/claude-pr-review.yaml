@@ -126,7 +126,7 @@ jobs:
             }
                         
             data = {
-                "model": "claude-3-sonnet-20240229",
+                "model": "claude-3-7-sonnet-20250219",
                 "max_tokens": 20000, # 提高 max_tokens
                 "temperature": 0.2,
                 # 强调严格 JSON 格式和转义
