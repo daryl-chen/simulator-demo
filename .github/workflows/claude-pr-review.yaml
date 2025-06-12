@@ -227,7 +227,7 @@ jobs:
               await github.rest.issues.createComment({
                 ...context.repo,
                 issue_number: context.issue.number,
-                body: '⚠️ **代码审查失败**\n\n无法加载审查结果。请查看工作流日志了解详情。'
+                body: '⚠️ **代码审查失败**\\n\\n无法加载审查结果。请查看工作流日志了解详情。'
               });
               return core.setFailed(`Failed to load review data: ${error.message}`);
             }
@@ -236,41 +236,41 @@ jobs:
             const headSha = context.payload.pull_request.head.sha;
             
             // Create main comment
-            let mainComment = `# Claude AI 代码审查\n\n`;
+            let mainComment = `# Claude AI 代码审查\\n\\n`;
             
             // Add summary
             if (reviewData.summary) {
-              mainComment += `## 1. PR 摘要\n\n${reviewData.summary}\n\n`;
+              mainComment += `## 1. PR 摘要\\n\\n${reviewData.summary}\\n\\n`;
             }
             
             // Add low-confidence issues
             if (reviewData.low_confidence_issues && reviewData.low_confidence_issues.length > 0) {
-              mainComment += `## 2. 可能存在的问题\n\n`;
+              mainComment += `## 2. 可能存在的问题\\n\\n`;
               for (const issue of reviewData.low_confidence_issues) {
-                const location = issue.file ? ` (\`${issue.file}\`${issue.line ? ` 第 ${issue.line} 行` : ''})` : '';
-                mainComment += `### ${issue.description}${location}\n\n`;
+                const location = issue.file ? ` (\\`${issue.file}\\`${issue.line ? ` 第 ${issue.line} 行` : ''})` : '';
+                mainComment += `### ${issue.description}${location}\\n\\n`;
                 if (issue.context_code) {
-                  mainComment += `${issue.context_code}\n\n`;
+                  mainComment += `${issue.context_code}\\n\\n`;
                 }
               }
             }
             
             // Note inline comment locations
-            mainComment += `## 3. 代码修复建议\n\n`;
+            mainComment += `## 3. 代码修复建议\\n\\n`;
             if (reviewData.high_confidence_fixes && reviewData.high_confidence_fixes.length > 0) {
-              mainComment += `已针对 ${reviewData.high_confidence_fixes.length} 处代码提出修复建议，请查看相关行的行内评论。\n\n`;
+              mainComment += `已针对 ${reviewData.high_confidence_fixes.length} 处代码提出修复建议，请查看相关行的行内评论。\\n\\n`;
             } else {
-              mainComment += `未发现需要立即修复的问题。\n\n`;
+              mainComment += `未发现需要立即修复的问题。\\n\\n`;
             }
             
             // Add other suggestions
             if (reviewData.other_suggestions) {
-              mainComment += `## 4. 其他改进建议\n\n${reviewData.other_suggestions}\n\n`;
+              mainComment += `## 4. 其他改进建议\\n\\n${reviewData.other_suggestions}\\n\\n`;
             }
             
             // Post main comment
             console.log('--- Attempting to post main PR comment ---');
-            console.log('Main Comment Body:', mainComment); # <-- 打印主评论内容
+            console.log('Main Comment Body:', JSON.stringify(mainComment)); // <-- 确保字符串被正确转义以便日志打印
             try {
               await github.rest.issues.createComment({
                 ...context.repo,
@@ -303,17 +303,17 @@ jobs:
                     path: fix.file,
                     line: parseInt(fix.line, 10),
                     side: 'RIGHT',
-                    body: `${fix.description}\n\n${fix.suggested_code}`
+                    body: `${fix.description}\\n\\n${fix.suggested_code}` // 确保 body 内部的换行符也是转义的
                   };
-                  console.log('Inline Comment Payload:', JSON.stringify(inlineCommentPayload, null, 2)); # <-- 打印行内评论请求体
+                  console.log('Inline Comment Payload:', JSON.stringify(inlineCommentPayload, null, 2)); // 确保 JSON 字符串被正确转义以便日志打印
                   
                   const lineNumber = parseInt(fix.line, 10);
                   if (isNaN(lineNumber)) {
                       console.error(`Invalid line number for ${fix.file}: ${fix.line}`);
                       // Fallback to a regular comment if line number is invalid
                       console.log(`--- Attempting to post fallback comment for invalid line number for ${fix.file}:${fix.line} ---`);
-                      const fallbackBody = `**注意：** 无法在 \`${fix.file}\` 第 ${fix.line} 行发布行内评论，因为行号无效。\n\n${fix.description}\n\n${fix.suggested_code}\n\n> 这通常是因为该行不在PR差异中或已被其他修改影响。`;
-                      console.log('Fallback Comment Body (Invalid Line):', fallbackBody); # <-- 打印回退评论内容
+                      const fallbackBody = `**注意：** 无法在 \\`${fix.file}\\` 第 ${fix.line} 行发布行内评论，因为行号无效。\\n\\n${fix.description}\\n\\n${fix.suggested_code}\\n\\n> 这通常是因为该行不在PR差异中或已被其他修改影响。`;
+                      console.log('Fallback Comment Body (Invalid Line):', JSON.stringify(fallbackBody)); // 确保字符串被正确转义以便日志打印
                       await github.rest.issues.createComment({
                           ...context.repo,
                           issue_number: prNumber,
@@ -338,8 +338,8 @@ jobs:
                   // Post fallback comment
                   try {
                     console.log(`--- Attempting to post fallback comment due to error for ${fix.file}:${fix.line} ---`);
-                    const fallbackBody = `**注意：** 无法在 \`${fix.file}\` 第 ${fix.line} 行发布行内评论。\n\n${fix.description}\n\n${fix.suggested_code}\n\n> 这通常是因为该行不在PR差异中或已被其他修改影响。`;
-                    console.log('Fallback Comment Body (Error):', fallbackBody); # <-- 打印回退评论内容
+                    const fallbackBody = `**注意：** 无法在 \\`${fix.file}\\` 第 ${fix.line} 行发布行内评论。\\n\\n${fix.description}\\n\\n${fix.suggested_code}\\n\\n> 这通常是因为该行不在PR差异中或已被其他修改影响。`;
+                    console.log('Fallback Comment Body (Error):', JSON.stringify(fallbackBody)); // 确保字符串被正确转义以便日志打印
                     await github.rest.issues.createComment({
                       ...context.repo,
                       issue_number: prNumber,
