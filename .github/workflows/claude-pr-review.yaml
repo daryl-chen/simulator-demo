@@ -76,14 +76,14 @@ jobs:
                 * `description` (string): 确认的问题的简洁描述。
                 * `suggested_code` (string): 包含修复建议的 Markdown 代码块。**你必须严格使用 ```suggestion 格式。注意：`suggested_code` 的 JSON 字符串值内部，只包含实际的 diff 行内容，不要包含 ```suggestion` 或 ``` 标记。** `suggestion` 块内部必须是标准的 diff 格式（行以 `+`、`-` 或 ` ` (空格) 开头）。例如：
                     ```suggestion
-                    - import old_lib;
-                    + import new_lib;
-                     function fetchData() {
-                    +   console.log("Fetching data...");
-                     }
+                    - import old_lib; // 删除一行
+                    + import new_lib; // 添加一行
+                     function fetchData() { // 未改变的上下文行
+                    +   console.log("Fetching data..."); // 新增一行
+                    }
                     ```
-                    **请注意：你生成的 JSON 字符串中 `suggested_code` 字段的值应为：`"- import old_lib;\\n+ import new_lib;\\n function fetchData() {\\n+   console.log(\\\"Fetching data...\\\");\\n }"` （仅包含 diff 内容，不含外层 ```suggestion` 和 ``` 标记）。**
-                    **请注意 `+` 和 `-` 前缀是强制性的，即使是单行修改或新增。**
+                    **当建议是删除一行时，`suggested_code` 字段的 JSON 字符串值应为：`"- private String namesrvAddr;"` (注意 ` - ` 前缀)。**
+                    **当建议是添加一行时，`suggested_code` 字段的 JSON 字符串值应为：`"+ public String getNewField() {"` (注意 ` + ` 前缀)。**
                     **极其重要：此字段的字符串值内部的任何双引号 `"` 或反斜杠 `\` 都必须严格进行 JSON 转义 (`\"` 或 `\\`)，并且换行符必须使用 `\n` 来表示，以确保整个 JSON 字符串的有效性。**
             
             4.  `other_suggestions` (string, optional): 其他非关键但有益的通用改进建议。
@@ -241,8 +241,11 @@ jobs:
               for (let line of lines) {
                 // If line already starts with +, -, or space, keep it as is.
                 // Otherwise, assume it's a new line to be added and prepend '+ '.
+                // IMPORTANT: This post-processing is a fallback. The model should ideally
+                // provide the correct diff prefixes. This function will NOT prepend '-'
+                // because it cannot reliably infer deletion intent without more context.
                 if (!line.startsWith('+') && !line.startsWith('-') && !line.startsWith(' ')) {
-                  formattedLines.push('+ ' + line);
+                  formattedLines.push('+ ' + line); // Default to addition if no diff prefix
                 } else {
                   formattedLines.push(line);
                 }
