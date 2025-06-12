@@ -74,17 +74,9 @@ jobs:
                 * `file` (string): 相关的相对文件路径。
                 * `line` (number): 建议修改的起始行号。**此行号至关重要：它必须是你的建议所针对的代码在 PR **修改后文件** 中**实际被修改、添加或删除**的行的精确起始行号。**如果该行在 PR 差异中没有被标记为添加、删除或修改，GitHub 将无法在此处放置行内评论。**
                 * `description` (string): 确认的问题的简洁描述。
-                * `suggested_code` (string): 包含修复建议的 Markdown 代码块。**你必须严格使用 ```suggestion 格式。注意：`suggested_code` 的 JSON 字符串值内部，只包含实际的 diff 行内容，不要包含 ```suggestion` 或 ``` 标记。** `suggestion` 块内部必须是标准的 diff 格式（行以 `+`、`-` 或 ` ` (空格) 开头）。例如：
-                    ```suggestion
-                    - import old_lib; // 删除一行
-                    + import new_lib; // 添加一行
-                     function fetchData() { // 未改变的上下文行
-                    +   console.log("Fetching data..."); // 新增一行
-                    }
-                    ```
-                    **当建议是删除一行时，`suggested_code` 字段的 JSON 字符串值应为：`"- private String namesrvAddr;"` (注意 ` - ` 前缀)。**
-                    **当建议是添加一行时，`suggested_code` 字段的 JSON 字符串值应为：`"+ public String getNewField() {"` (注意 ` + ` 前缀)。**
-                    **极其重要：此字段的字符串值内部的任何双引号 `"` 或反斜杠 `\` 都必须严格进行 JSON 转义 (`\"` 或 `\\`)，并且换行符必须使用 `\n` 来表示，以确保整个 JSON 字符串的有效性。**
+                * `suggested_code` (string): 包含修复建议的 Markdown 代码块。**你必须严格使用 ```suggestion 格式。注意：`suggested_code` 的 JSON 字符串值内部，只包含实际的 diff 行内容，不要包含 ```suggestion` 或 ``` 标记。** `suggestion` 块内部必须是给出最终的修改结果。例如：
+                    **当建议是删除某行（或某几行时），`suggested_code` 字段当 JSON 字符串值应该为：``（注意，内容是空的，代表了删除）。**
+                    **当建议是修改某行的内容，比如：想要将 `  private long id;` 修改为 `  public long id;`，则`suggested_code` 字段当 JSON 字符串值应该为：`  public long id;`（直接给出了最终的修改建议）。**
             
             4.  `other_suggestions` (string, optional): 其他非关键但有益的通用改进建议。
             
