@@ -136,11 +136,11 @@ jobs:
                         
             # Send request
             print("Sending request to Claude API...")
-            # 打印完整的请求头和请求体
+            # 打印完整的请求头和请求体，确保非 ASCII 字符正确显示
             print("Claude API Request Headers:")
             print(json.dumps(headers, indent=2))
             print("Claude API Request Payload:")
-            print(json.dumps(data, indent=2))
+            print(json.dumps(data, indent=2, ensure_ascii=False)) # <-- 这里添加了 ensure_ascii=False
             
             response = requests.post("https://api.anthropic.com/v1/messages", headers=headers, json=data)
                         
@@ -269,6 +269,8 @@ jobs:
             }
             
             // Post main comment
+            console.log('--- Attempting to post main PR comment ---');
+            console.log('Main Comment Body:', mainComment); # <-- 打印主评论内容
             try {
               await github.rest.issues.createComment({
                 ...context.repo,
@@ -292,16 +294,30 @@ jobs:
                 }
                 
                 try {
-                  console.log(`Attempting to post review comment for ${fix.file} line ${fix.line}`);
-                  // Ensure the line number is an integer
+                  console.log(`--- Attempting to post inline review comment for ${fix.file}:${fix.line} ---`);
+                  // 打印行内评论的请求体
+                  const inlineCommentPayload = {
+                    ...context.repo,
+                    pull_number: prNumber,
+                    commit_id: headSha,
+                    path: fix.file,
+                    line: parseInt(fix.line, 10),
+                    side: 'RIGHT',
+                    body: `${fix.description}\n\n${fix.suggested_code}`
+                  };
+                  console.log('Inline Comment Payload:', JSON.stringify(inlineCommentPayload, null, 2)); # <-- 打印行内评论请求体
+                  
                   const lineNumber = parseInt(fix.line, 10);
                   if (isNaN(lineNumber)) {
                       console.error(`Invalid line number for ${fix.file}: ${fix.line}`);
                       // Fallback to a regular comment if line number is invalid
+                      console.log(`--- Attempting to post fallback comment for invalid line number for ${fix.file}:${fix.line} ---`);
+                      const fallbackBody = `**注意：** 无法在 \`${fix.file}\` 第 ${fix.line} 行发布行内评论，因为行号无效。\n\n${fix.description}\n\n${fix.suggested_code}\n\n> 这通常是因为该行不在PR差异中或已被其他修改影响。`;
+                      console.log('Fallback Comment Body (Invalid Line):', fallbackBody); # <-- 打印回退评论内容
                       await github.rest.issues.createComment({
                           ...context.repo,
                           issue_number: prNumber,
-                          body: `**注意：** 无法在 \`${fix.file}\` 第 ${fix.line} 行发布行内评论，因为行号无效。\n\n${fix.description}\n\n${fix.suggested_code}\n\n> 这通常是因为该行不在PR差异中或已被其他修改影响。`
+                          body: fallbackBody
                       });
                       continue;
                   }
@@ -321,10 +337,13 @@ jobs:
                   
                   // Post fallback comment
                   try {
+                    console.log(`--- Attempting to post fallback comment due to error for ${fix.file}:${fix.line} ---`);
+                    const fallbackBody = `**注意：** 无法在 \`${fix.file}\` 第 ${fix.line} 行发布行内评论。\n\n${fix.description}\n\n${fix.suggested_code}\n\n> 这通常是因为该行不在PR差异中或已被其他修改影响。`;
+                    console.log('Fallback Comment Body (Error):', fallbackBody); # <-- 打印回退评论内容
                     await github.rest.issues.createComment({
                       ...context.repo,
                       issue_number: prNumber,
-                      body: `**注意：** 无法在 \`${fix.file}\` 第 ${fix.line} 行发布行内评论。\n\n${fix.description}\n\n${fix.suggested_code}\n\n> 这通常是因为该行不在PR差异中或已被其他修改影响。`
+                      body: fallbackBody
                     });
                   } catch (fallbackError) {
                     console.error('Failed to post fallback comment:', fallbackError);
