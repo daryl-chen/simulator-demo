@@ -136,10 +136,19 @@ jobs:
                         
             # Send request
             print("Sending request to Claude API...")
+            # 打印完整的请求头和请求体
+            print("Claude API Request Headers:")
+            print(json.dumps(headers, indent=2))
+            print("Claude API Request Payload:")
+            print(json.dumps(data, indent=2))
+            
             response = requests.post("https://api.anthropic.com/v1/messages", headers=headers, json=data)
                         
+            # 打印完整的原始响应
+            print("Claude API Raw Response:")
+            print(response.text)
+
             # Check status code
-            print(f"API response status code: {response.status_code}")
             if response.status_code != 200:
                 print(f"Error response: {response.text}")
                 exit(1)
