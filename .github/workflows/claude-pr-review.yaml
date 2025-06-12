@@ -58,7 +58,7 @@ jobs:
           echo "Diff saved to diff_content.txt ($(wc -c < diff_content.txt) bytes)"
           
           # Create user prompt file, avoiding shell parsing issues
-          # 强调 JSON 格式和 `context_code` 的正确性，并提供示例
+          # 强调 JSON 格式和 `context_code` 以及 `suggested_code` 的正确性，并提供示例
           cat > user_prompt.txt << 'EOT'
             这是一个 GitHub Pull Request 的代码差异。请对它进行全面审查，并以 **JSON 格式**提供详细、可操作的反馈。你的响应应包含以下顶级键：
             
@@ -81,12 +81,7 @@ jobs:
                     + // 这是建议修改后的新代码行，请务必包含在内
                     + // 这是如果修改涉及多行，建议添加的第二行
                     ```
-                    **特别注意：**
-                    * 如果建议是删除一行，则只包含 `-` 开头的该行。
-                    * 如果建议是添加一行，则只包含 `+` 开头的该行。
-                    * 如果建议是修改一行，则包含 `-` 开头的原始行和 `+` 开头的修改后的行。
-                    * 如果建议修改多行，请确保 `suggested_code` 包含所有受影响的行，用 `-` 和 `+` 明确标记。
-                    * 请确保此代码块内容准确无误，代表了该行（或多行）的完整修改，可以直接在 GitHub UI 中点击"Accept suggestion"来应用。
+                    **极其重要：此字段的字符串值内部的任何双引号 `"` 或反斜杠 `\` 都必须严格进行 JSON 转义 (`\"` 或 `\\`)，并且换行符必须使用 `\n` 来表示，以确保整个 JSON 字符串的有效性。例如，如果你的建议代码是：`- old line\n+ new line`，那么 `suggested_code` 的值应为：`"```suggestion\\n- old line\\n+ new line\\n```"`**
             
             4.  `other_suggestions` (string, optional): 其他非关键但有益的通用改进建议。
             
@@ -126,7 +121,7 @@ jobs:
             }
                         
             data = {
-                "model": "claude-3-7-sonnet-20250219",
+                "model": "claude-3-7-sonnet-20250219", # 更新为新的模型名称
                 "max_tokens": 20000, # 提高 max_tokens
                 "temperature": 0.2,
                 # 强调严格 JSON 格式和转义
