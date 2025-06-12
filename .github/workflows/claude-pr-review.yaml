@@ -219,10 +219,12 @@ jobs:
             // Function to escape strings for JavaScript template literals
             // This function ensures that backticks (`) and dollar signs ($) within a string
             // are properly escaped when that string is embedded inside a template literal.
+            // Crucially, it also escapes backslashes (\) to prevent them from being interpreted
+            // as part of new escape sequences within the JS template literal itself.
             function escapeForTemplateLiteral(str) {
-              if (!str) return '';
-              // Escape backticks (`) and dollar signs ($) with a backslash
-              return str.replace(/`/g, '\\`').replace(/\$/g, '\\$');
+              if (typeof str !== 'string') return str; // Handle non-string inputs safely
+              // Escape backslashes first, then backticks, then dollar signs
+              return str.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$/g, '\\$');
             }
 
             // 读取提取的JSON
@@ -236,7 +238,7 @@ jobs:
               await github.rest.issues.createComment({
                 ...context.repo,
                 issue_number: context.issue.number,
-                body: '⚠️ **代码审查失败**\\n\\n无法加载审查结果。请查看工作流日志了解详情。'
+                body: '⚠️ **代码审查失败**\n\n无法加载审查结果。请查看工作流日志了解详情。'
               });
               return core.setFailed(`Failed to load review data: ${error.message}`);
             }
@@ -245,21 +247,29 @@ jobs:
             const headSha = context.payload.pull_request.head.sha;
             
             // Create main comment
-            // Using template literals consistently for mainComment construction
-            let mainComment = `# Claude AI 代码审查\n\n`; // Use \n for actual newlines in JS
+            let mainComment = `# Claude AI 代码审查\n\n`; 
             
             // Add summary
             if (reviewData.summary) {
-              mainComment += `## 1. PR 摘要\n\n${reviewData.summary}\n\n`;
+              mainComment += `## 1. PR 摘要\n\n${escapeForTemplateLiteral(reviewData.summary)}\n\n`; // Escape summary too
             }
             
             // Add low-confidence issues
             if (reviewData.low_confidence_issues && reviewData.low_confidence_issues.length > 0) {
               mainComment += `## 2. 可能存在的问题\n\n`;
               for (const issue of reviewData.low_confidence_issues) {
-                // Ensure inline code blocks in Markdown are correctly escaped in the JS string
-                const location = issue.file ? ` (\`${issue.file}\`${issue.line ? ` 第 ${issue.line} 行` : ''})\` : '';
-                mainComment += `### ${issue.description}${location}\n\n`;
+                // Build location string with Markdown backticks for file path
+                let locationString = '';
+                if (issue.file) {
+                    // Escape file content for template literal safety
+                    locationString = ` (\`${escapeForTemplateLiteral(issue.file)}\``;
+                    if (issue.line) {
+                        locationString += ` 第 ${issue.line} 行`;
+                    }
+                    locationString += `)`;
+                }
+                // Escape description for template literal safety
+                mainComment += `### ${escapeForTemplateLiteral(issue.description)}${locationString}\n\n`;
                 if (issue.context_code) {
                   // Apply escapeForTemplateLiteral to context_code
                   mainComment += `${escapeForTemplateLiteral(issue.context_code)}\n\n`;
@@ -277,7 +287,7 @@ jobs:
             
             // Add other suggestions
             if (reviewData.other_suggestions) {
-              mainComment += `## 4. 其他改进建议\n\n${reviewData.other_suggestions}\n\n`;
+              mainComment += `## 4. 其他改进建议\n\n${escapeForTemplateLiteral(reviewData.other_suggestions)}\n\n`; // Escape other_suggestions too
             }
             
             // Post main comment
@@ -308,14 +318,14 @@ jobs:
                 try {
                   console.log(`--- Attempting to post inline review comment for ${fix.file}:${fix.line} ---`);
                   // Construct body using escapeForTemplateLiteral for suggested_code
-                  const commentBody = `${fix.description}\n\n${escapeForTemplateLiteral(fix.suggested_code)}`;
+                  const commentBody = `${escapeForTemplateLiteral(fix.description)}\n\n${escapeForTemplateLiteral(fix.suggested_code)}`; // Escape description
                   
                   // Print inline comment payload for debugging
                   const inlineCommentPayload = {
                     ...context.repo,
                     pull_number: prNumber,
                     commit_id: headSha,
-                    path: fix.file,
+                    path: escapeForTemplateLiteral(fix.file), // Escape path too for logging/safety
                     line: parseInt(fix.line, 10),
                     side: 'RIGHT',
                     body: commentBody
@@ -326,8 +336,8 @@ jobs:
                   if (isNaN(lineNumber)) {
                       console.error(`Invalid line number for ${fix.file}: ${fix.line}`);
                       // Fallback to a regular comment if line number is invalid
-                      console.log(`--- Attempting to post fallback comment for invalid line number for ${fix.file}:${fix.line} ---`);
-                      const fallbackBody = `**注意：** 无法在 \`${fix.file}\` 第 ${fix.line} 行发布行内评论，因为行号无效。\n\n${fix.description}\n\n${escapeForTemplateLiteral(fix.suggested_code)}\n\n> 这通常是因为该行不在PR差异中或已被其他修改影响。`;
+                      console.log(`--- Attempting to post fallback comment for invalid line number for ${escapeForTemplateLiteral(fix.file)}:${fix.line} ---`);
+                      const fallbackBody = `**注意：** 无法在 \`${escapeForTemplateLiteral(fix.file)}\` 第 ${fix.line} 行发布行内评论，因为行号无效。\n\n${escapeForTemplateLiteral(fix.description)}\n\n${escapeForTemplateLiteral(fix.suggested_code)}\n\n> 这通常是因为该行不在PR差异中或已被其他修改影响。`;
                       console.log('Fallback Comment Body (Invalid Line):', JSON.stringify(fallbackBody)); 
                       await github.rest.issues.createComment({
                           ...context.repo,
@@ -342,7 +352,7 @@ jobs:
                     ...context.repo,
                     pull_number: prNumber,
                     commit_id: headSha,
-                    path: fix.file,
+                    path: fix.file, // Path needs to be the original for API call
                     line: lineNumber,
                     side: 'RIGHT',
                     body: commentBody // Use the already constructed and escaped commentBody
@@ -352,8 +362,8 @@ jobs:
                   
                   // Post fallback comment
                   try {
-                    console.log(`--- Attempting to post fallback comment due to error for ${fix.file}:${fix.line} ---`);
-                    const fallbackBody = `**注意：** 无法在 \`${fix.file}\` 第 ${fix.line} 行发布行内评论。\n\n${fix.description}\n\n${escapeForTemplateLiteral(fix.suggested_code)}\n\n> 这通常是因为该行不在PR差异中或已被其他修改影响。`;
+                    console.log(`--- Attempting to post fallback comment due to error for ${escapeForTemplateLiteral(fix.file)}:${fix.line} ---`);
+                    const fallbackBody = `**注意：** 无法在 \`${escapeForTemplateLiteral(fix.file)}\` 第 ${fix.line} 行发布行内评论。\n\n${escapeForTemplateLiteral(fix.description)}\n\n${escapeForTemplateLiteral(fix.suggested_code)}\n\n> 这通常是因为该行不在PR差异中或已被其他修改影响。`;
                     console.log('Fallback Comment Body (Error):', JSON.stringify(fallbackBody)); 
                     await github.rest.issues.createComment({
                       ...context.repo,
