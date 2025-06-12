@@ -10,7 +10,7 @@ public class MqConsumerProperties {
     private String namesrvAddr;
 
     private String group;
-
+    private String id;
     public String id;
 
     public String getNamesrvAddr() {
