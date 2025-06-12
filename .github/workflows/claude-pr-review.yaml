@@ -75,8 +75,8 @@ jobs:
                 * `line` (number): 建议修改的起始行号。**此行号至关重要：它必须是你的建议所针对的代码在 PR **修改后文件** 中**实际被修改、添加或删除**的行的精确起始行号。**如果该行在 PR 差异中没有被标记为添加、删除或修改，GitHub 将无法在此处放置行内评论。**
                 * `description` (string): 确认的问题的简洁描述。
                 * `suggested_code` (string): 包含修复建议的 Markdown 代码块。**你必须严格使用 ```suggestion 格式。注意：`suggested_code` 的 JSON 字符串值内部，只包含实际的 diff 行内容，不要包含 ```suggestion` 或 ``` 标记。** `suggestion` 块内部必须是给出最终的修改结果。例如：
-                    **当建议是删除某行（或某几行时），`suggested_code` 字段当 JSON 字符串值应该为：``（注意，内容是空的，代表了删除）。**
-                    **当建议是修改某行的内容，比如：想要将 `  private long id;` 修改为 `  public long id;`，则`suggested_code` 字段当 JSON 字符串值应该为：`  public long id;`（直接给出了最终的修改建议）。**
+                    **当建议是删除某行（或某几行时），`suggested_code` 字段当 JSON 字符串值应该为：```suggestion\n```（注意，除去```suggestion\n```外并没任何其他内容，代表了删除）。**
+                    **当建议是修改某行的内容，比如：想要将 `  private long id;` 修改为 `  public long id;`，则`suggested_code` 字段当 JSON 字符串值应该为：```suggestion\n     public Long id;```（除去```suggestion\n```外直接给出了最终的修改建议，包括缩进、换行）。**
             
             4.  `other_suggestions` (string, optional): 其他非关键但有益的通用改进建议。
             
