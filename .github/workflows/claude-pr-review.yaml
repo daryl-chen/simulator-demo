@@ -74,14 +74,16 @@ jobs:
                 * `file` (string): 相关的相对文件路径。
                 * `line` (number): 建议修改的起始行号。**此行号至关重要：它必须是你的建议所针对的代码在 PR **修改后文件** 中**实际被修改、添加或删除**的行的精确起始行号。**如果该行在 PR 差异中没有被标记为添加、删除或修改，GitHub 将无法在此处放置行内评论。**
                 * `description` (string): 确认的问题的简洁描述。
-                * `suggested_code` (string): 包含修复建议的 Markdown 代码块。**你必须严格使用 ```suggestion 格式**，例如：
+                * `suggested_code` (string): 包含修复建议的 Markdown 代码块。**你必须严格使用 ```suggestion 格式，并且 `suggestion` 块内部必须是标准的 diff 格式（行以 `+`、`-` 或 ` ` (空格) 开头）。** 例如：
                     ```suggestion
-                    - // 这是原来的代码行，请务必包含在内
-                    - // 这是如果修改涉及多行，原来的第二行
-                    + // 这是建议修改后的新代码行，请务必包含在内
-                    + // 这是如果修改涉及多行，建议添加的第二行
+                    - import old_lib;
+                    + import new_lib;
+                     function fetchData() {
+                    +   console.log("Fetching data...");
+                     }
                     ```
-                    **极其重要：此字段的字符串值内部的任何双引号 `"` 或反斜杠 `\` 都必须严格进行 JSON 转义 (`\"` 或 `\\`)，并且换行符必须使用 `\n` 来表示，以确保整个 JSON 字符串的有效性。例如，如果你的建议代码是：`- old line\n+ new line`，那么 `suggested_code` 的值应为：`"```suggestion\\n- old line\\n+ new line\\n```"`**
+                    **请注意 `+` 和 `-` 前缀是强制性的，即使是单行修改或新增。**
+                    **极其重要：此字段的字符串值内部的任何双引号 `"` 或反斜杠 `\` 都必须严格进行 JSON 转义 (`\"` 或 `\\`)，并且换行符必须使用 `\n` 来表示，以确保整个 JSON 字符串的有效性。**
             
             4.  `other_suggestions` (string, optional): 其他非关键但有益的通用改进建议。
             
@@ -227,6 +229,24 @@ jobs:
               return str.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$/g, '\\$');
             }
 
+            // Function to ensure suggested_code is in proper diff format for GitHub
+            function formatSuggestedCodeForGitHub(code) {
+              if (!code) return '';
+              // Split code by newlines
+              const lines = code.split('\n');
+              const formattedLines = [];
+              for (let line of lines) {
+                // If line already starts with +, -, or space, keep it as is.
+                // Otherwise, assume it's a new line to be added and prepend '+ '.
+                if (!line.startsWith('+') && !line.startsWith('-') && !line.startsWith(' ')) {
+                  formattedLines.push('+ ' + line);
+                } else {
+                  formattedLines.push(line);
+                }
+              }
+              return formattedLines.join('\n');
+            }
+
             // 读取提取的JSON
             let reviewData;
             try {
@@ -317,8 +337,12 @@ jobs:
                 
                 try {
                   console.log(`--- Attempting to post inline review comment for ${fix.file}:${fix.line} ---`);
+                  
+                  // Format suggested_code to ensure it has + prefixes if missing
+                  const formattedSuggestedCode = formatSuggestedCodeForGitHub(fix.suggested_code);
+
                   // Construct body using escapeForTemplateLiteral for suggested_code
-                  const commentBody = `${escapeForTemplateLiteral(fix.description)}\n\n${escapeForTemplateLiteral(fix.suggested_code)}`; // Escape description
+                  const commentBody = `${escapeForTemplateLiteral(fix.description)}\n\n${escapeForTemplateLiteral(formattedSuggestedCode)}`; // Escape description
                   
                   // Print inline comment payload for debugging
                   const inlineCommentPayload = {
@@ -337,7 +361,7 @@ jobs:
                       console.error(`Invalid line number for ${fix.file}: ${fix.line}`);
                       // Fallback to a regular comment if line number is invalid
                       console.log(`--- Attempting to post fallback comment for invalid line number for ${escapeForTemplateLiteral(fix.file)}:${fix.line} ---`);
-                      const fallbackBody = `**注意：** 无法在 \`${escapeForTemplateLiteral(fix.file)}\` 第 ${fix.line} 行发布行内评论，因为行号无效。\n\n${escapeForTemplateLiteral(fix.description)}\n\n${escapeForTemplateLiteral(fix.suggested_code)}\n\n> 这通常是因为该行不在PR差异中或已被其他修改影响。`;
+                      const fallbackBody = `**注意：** 无法在 \`${escapeForTemplateLiteral(fix.file)}\` 第 ${fix.line} 行发布行内评论，因为行号无效。\n\n${escapeForTemplateLiteral(fix.description)}\n\n${escapeForTemplateLiteral(formattedSuggestedCode)}\n\n> 这通常是因为该行不在PR差异中或已被其他修改影响。`;
                       console.log('Fallback Comment Body (Invalid Line):', JSON.stringify(fallbackBody)); 
                       await github.rest.issues.createComment({
                           ...context.repo,
@@ -363,7 +387,7 @@ jobs:
                   // Post fallback comment
                   try {
                     console.log(`--- Attempting to post fallback comment due to error for ${escapeForTemplateLiteral(fix.file)}:${fix.line} ---`);
-                    const fallbackBody = `**注意：** 无法在 \`${escapeForTemplateLiteral(fix.file)}\` 第 ${fix.line} 行发布行内评论。\n\n${escapeForTemplateLiteral(fix.description)}\n\n${escapeForTemplateLiteral(fix.suggested_code)}\n\n> 这通常是因为该行不在PR差异中或已被其他修改影响。`;
+                    const fallbackBody = `**注意：** 无法在 \`${escapeForTemplateLiteral(fix.file)}\` 第 ${fix.line} 行发布行内评论。\n\n${escapeForTemplateLiteral(fix.description)}\n\n${escapeForTemplateLiteral(formattedSuggestedCode)}\n\n> 这通常是因为该行不在PR差异中或已被其他修改影响。`;
                     console.log('Fallback Comment Body (Error):', JSON.stringify(fallbackBody)); 
                     await github.rest.issues.createComment({
                       ...context.repo,
