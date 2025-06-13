@@ -74,20 +74,22 @@ jobs:
             3.  `high_confidence_fixes` (array of objects):
                 * `file` (string): 相关的相对文件路径。
                 * `start_line` (number, optional): 问题代码的**起始行号**。
-                * `line` (number): 问题代码的**结束行号**
+                * `line` (number): 问题代码的**结束行号**。**此行号至关重要：它必须是你的建议所针对的代码在 PR **修改后文件** 中**实际被修改、添加或删除**的行的精确**结束行号**。**务必选择包含实际代码的行，该代码与问题直接相关或需要被修改/删除。** 
                 * `description` (string): 确认的问题的简洁描述。
-                * `suggested_code` (string): 建议修改后的目标值，包含修复建议的 Markdown 代码块。
-                    **你必须严格使用 ```suggestion 格式。注意：`suggested_code` 的 JSON 字符串值内部，只包含实际的**最终代码行内容**，不要包含 ```suggestion` 或 ``` 标记，也不要包含 `+`、`-` 或 ` ` (空格) 前缀。**
+                * `suggested_code` (string): 修改后的值（注意：不是diff，而是直接给出修改的目标。比如：（1）删除某行/某几行代码，则目标值为空；（2）将 private long id; 修改为 public Long id; 则直接给出 public Long id;即可）。包含修复建议的 Markdown 代码块。
+                    **你必须严格使用 ```suggestion 格式。注意：`suggested_code` 的 JSON 字符串值内部，只包含实际的**最终代码行内容**，不要包含 ```suggestion` 或 ``` 标记，也不要包含 `+`、`-` 或 ` ` (空格) 前缀。GitHub 会根据 `suggested_code` 的内容和 `line`/`start_line` 自动判断并渲染 diff。**
                     
                     **处理方式分为两种，请务必严格遵守：**
-
-                    * **A. 修改行：** 如果建议是添加或修改代码（包括删除部分并添加新内容），则 `suggested_code` 字段的值必须是**替换后的最终代码内容**，不带任何 `+`、`-` 或 ` ` (空格) 前缀。
-                        * 示例 1：将 `private long id;` 修改为 `public Long id;`，则 `line` 为 `5`，`start_line` 为5，`suggested_code` 的值应为：`"    public Long id;"`。
-                        * 示例 2 (多行修改)：将第 5-6 行替换为 `String new1;\nString new2;`，则 `start_line` 为 `5`，`line` 为 `6`，`suggested_code` 的值应为：`"String new1;\\nString new2;"`。
-                    * **B. 删除行：不要有单独的删除行操作，如果要删除某行，请将前后的2行都包括在内，给出最终的修改建议
-                        * 示例 1: `String new1;\nString new2;\nString new3;\nString new4;\nString new5;`（1-5行的代码）中，想要将第三行（String new3;)删除，则 `line` 为 `5`，`start_line` 为1，`suggested_code` 的值应为：`"String new1;\nString new2;\nString new4;\nString new5;`。
-                    * **C. 添加行：不要有单独的添加行操作，如果要添加某行，请将前后的2行都包括在内，给出最终的修改建议
-                        * 示例 1: `String new1;\nString new2;\nString new4;\nString new5;`（1-4行的代码）中，想要在2、3中间添加一行（String new3;)，则 `line` 为 `4`，`start_line` 为1，`suggested_code` 的值应为：`"String new1;\nString new2;\nString new3;\nString new4;\nString new5;`。
+                    * **A. 仅删除行：** 如果建议是**删除一行或多行代码**，则 `suggested_code` 字段的值**必须且只能**是**空字符串 `\"\"`**。
+                        * **这绝对意味着：`\"suggested_code\": \"\"`。**
+                        * **即使被删除的行有内容，你也不应在 `suggested_code` 中包含这些内容。**
+                        * 此时 `line` 字段应指向要删除的**结束行号**，如果删除多行，`start_line` 应指向要删除的**起始行号**。
+                        * 示例：要删除 `private String oldField;` （在第 10 行），则 `line` 为 `10`，`start_line` **不提供**，`suggested_code` 的值应为：`""`。
+                        * 示例：要删除第 10-12 行代码（包含 `oldField1`, `oldField2`, `oldField3`），则 `start_line` 为 `10`，`line` 为 `12`，`suggested_code` 的值应为：`""`。
+                    * **B. 添加或修改行：** 如果建议是添加或修改代码（包括删除部分并添加新内容），则 `suggested_code` 字段的值必须是**替换后的最终代码内容**，不带任何 `+`、`-` 或 ` ` (空格) 前缀。
+                        * 示例 1：将 `private long id;` 修改为 `public Long id;`，则 `line` 为 `5`，`start_line` **不提供**，`suggested_code` 的值应为：`"    public Long id;"`。
+                        * 示例 2：添加新行 `console.log("New log");`，则 `line` 为 `6`，`start_line` **不提供**，`suggested_code` 的值应为：`"    console.log(\\\"New log\\\");"`。
+                        * 示例 3 (多行修改)：将第 5-6 行替换为 `String new1;\nString new2;`，则 `start_line` 为 `5`，`line` 为 `6`，`suggested_code` 的值应为：`"    String new1;\\n    String new2;"`。
 
                     **极其重要：此字段的字符串值内部的任何双引号 `"` 或反斜杠 `\` 都必须严格进行 JSON 转义 (`\"` 或 `\\`)，并且换行符必须使用 `\n` 来表示，以确保整个 JSON 字符串的有效性。**
             
