@@ -79,19 +79,18 @@ jobs:
                 * `suggested_code` (string): 包含修复建议的 Markdown 代码块。
                     **你必须严格使用 ```suggestion 格式。注意：`suggested_code` 的 JSON 字符串值内部，只包含实际的**最终代码行内容**，不要包含 ```suggestion` 或 ``` 标记，也不要包含 `+`、`-` 或 ` ` (空格) 前缀。GitHub 会根据 `suggested_code` 的内容和 `line`/`start_line` 自动判断并渲染 diff。**
                     
-                    **处理方式示例：**
-                    * **A. 仅删除单行：**
-                        * 要删除 `private String oldField;` （在第 10 行），则 `line` 为 `10`，`start_line` **不提供**，`suggested_code` 的值应为：`""`。
-                    * **B. 仅删除多行：**
-                        * 要删除第 10-12 行代码（例如 `oldField1`, `oldField2`, `oldField3`），则 `start_line` 为 `10`，`line` 为 `12`，`suggested_code` 的值应为：`""`。
-                    * **C. 添加或修改单行：**
-                        * 将第 5 行 `private long id;` 修改为 `public Long id;`，则 `line` 为 `5`，`start_line` **不提供**，`suggested_code` 的值应为：`"    public Long id;"`。
-                    * **D. 添加或修改多行：**
-                        * 将第 5-6 行替换为 `String new1;\nString new2;`，则 `start_line` 为 `5`，`line` 为 `6`，`suggested_code` 的值应为：`"    String new1;\\n    String new2;"`。
-                    * **E. 修复重复代码（删除一个重复项）：**
-                        * 假设代码中有两行 `private String namesrvAddr;`，分别在第 10 行和第 12 行，要删除第 12 行的重复项。则 `line` 为 `12`，`start_line` **不提供**，`suggested_code` 的值应为：`""`。
-                        * **如果两个重复项都在修改范围内（例如 10-12 行重复，只保留一个），请指向第一个重复项的开始行和最后一个重复项的结束行。** 例如，删除 10-12 行的重复内容（保留第 10 行），则 `start_line` 为 `11`，`line` 为 `12`，`suggested_code` 为 `""`。
-                    
+                    **处理方式分为两种，请务必严格遵守：**
+                    * **A. 仅删除行：** 如果建议是**删除一行或多行代码**，则 `suggested_code` 字段的值**必须且只能**是**空字符串 `\"\"`**。
+                        * **这绝对意味着：`\"suggested_code\": \"\"`。**
+                        * **即使被删除的行有内容，你也不应在 `suggested_code` 中包含这些内容。**
+                        * 此时 `line` 字段应指向要删除的**结束行号**，如果删除多行，`start_line` 应指向要删除的**起始行号**。
+                        * 示例：要删除 `private String oldField;` （在第 10 行），则 `line` 为 `10`，`start_line` **不提供**，`suggested_code` 的值应为：`""`。
+                        * 示例：要删除第 10-12 行代码（包含 `oldField1`, `oldField2`, `oldField3`），则 `start_line` 为 `10`，`line` 为 `12`，`suggested_code` 的值应为：`""`。
+                    * **B. 添加或修改行：** 如果建议是添加或修改代码（包括删除部分并添加新内容），则 `suggested_code` 字段的值必须是**替换后的最终代码内容**，不带任何 `+`、`-` 或 ` ` (空格) 前缀。
+                        * 示例 1：将 `private long id;` 修改为 `public Long id;`，则 `line` 为 `5`，`start_line` **不提供**，`suggested_code` 的值应为：`"    public Long id;"`。
+                        * 示例 2：添加新行 `console.log("New log");`，则 `line` 为 `6`，`start_line` **不提供**，`suggested_code` 的值应为：`"    console.log(\\\"New log\\\");"`。
+                        * 示例 3 (多行修改)：将第 5-6 行替换为 `String new1;\nString new2;`，则 `start_line` 为 `5`，`line` 为 `6`，`suggested_code` 的值应为：`"    String new1;\\n    String new2;"`。
+
                     **极其重要：此字段的字符串值内部的任何双引号 `"` 或反斜杠 `\` 都必须严格进行 JSON 转义 (`\"` 或 `\\`)，并且换行符必须使用 `\n` 来表示，以确保整个 JSON 字符串的有效性。**
             
             4.  `other_suggestions` (string, optional): 其他非关键但有益的通用改进建议。
