@@ -72,17 +72,20 @@ jobs:
             
             3.  `high_confidence_fixes` (array of objects):
                 * `file` (string): 相关的相对文件路径。
-                * `line` (number): 建议修改的起始行号。**此行号至关重要：它必须是你的建议所针对的代码在 PR **修改后文件** 中**实际被修改、添加或删除**的行的精确起始行号。**务必选择第一个包含实际代码的行，该代码与问题直接相关或需要被修改/删除。** **严禁**指向空白行、注释行或与问题无关的行作为起始行号。**特别地，对于重复代码，请确保 `line` 必须指向重复代码的**第一个实际声明行**（例如 `private String namesrvAddr;`），而**绝不能**指向其前后的空行、注释行或类定义行。**如果该行在 PR 差异中没有被标记为添加、删除或修改，GitHub 将无法在此处放置行内评论。**
+                * `line` (number): 建议修改的结束行号。**此行号至关重要：它必须是你的建议所针对的代码在 PR **修改后文件** 中**实际被修改、添加或删除**的行的**结束行号**。**务必选择第一个包含实际代码的行，该代码与问题直接相关或需要被修改/删除。** **严禁**指向空白行、注释行或与问题无关的行作为起始行号。**特别地，对于重复代码，请确保 `line` 指向重复代码的**最后一个实际声明行**，`start_line` 指向重复代码的**第一个实际声明行**。**如果该行或行范围在 PR 差异中没有被标记为添加、删除或修改，GitHub 将无法在此处放置行内评论。**
+                * `start_line` (number, optional): 建议修改的起始行号。**仅当建议涉及多行时提供此字段，此时 `line` 表示结束行。如果只建议单行修改，则此字段应省略。**
                 * `description` (string): 确认的问题的简洁描述。
                 * `suggested_code` (string): 包含修复建议的 Markdown 代码块。
-                    **你必须严格使用 ```suggestion 格式。注意：`suggested_code` 的 JSON 字符串值内部，只包含实际的**最终代码行内容**，不要包含 ```suggestion` 或 ``` 标记，也不要包含 `+`、`-` 或 ` ` (空格) 前缀。GitHub 会根据 `suggested_code` 的内容和 `line` 自动判断并渲染 diff。**
+                    **你必须严格使用 ```suggestion 格式。注意：`suggested_code` 的 JSON 字符串值内部，只包含实际的**最终代码行内容**，不要包含 ```suggestion` 或 ``` 标记，也不要包含 `+`、`-` 或 ` ` (空格) 前缀。GitHub 会根据 `suggested_code` 的内容和 `line`/`start_line` 自动判断并渲染 diff。**
                     
-                    **处理方式分为两种：**
-                    * **A. 仅删除行：** 如果建议是**删除一行或多行代码**，则 `suggested_code` 字段的值必须是**空字符串 `\"\"`**。此时 `line` 字段应指向要删除的**起始行号**。
-                        * **删除示例：** 如果要删除 `private String oldField;`，则 `suggested_code` 的值应为：`""`。**（请严格遵守：删除时 `suggested_code` 绝对为空字符串 `""`！）**
-                    * **B. 添加或修改行：** 如果建议是添加或修改代码（包括删除部分并添加新内容），则 `suggested_code` 字段的值必须是**替换后的最终代码内容**，不带任何 `+`、`-` 或 ` ` (空格) 前缀。
-                        * 示例 1：将 `private long id;` 修改为 `public Long id;`，则 `suggested_code` 的值应为：`"    public Long id;"`
-                        * 示例 2：添加新行 `console.log("New log");`，则 `suggested_code` 的值应为：`"    console.log(\\\"New log\\\");"`
+                    **处理方式分为三种：**
+                    * **A. 仅删除行：** 如果建议是**删除一行或多行代码**，则 `suggested_code` 字段的值**必须且只能**是**空字符串 `\"\"`**。**这意味着，即使被删除的行有内容，你也不应在 `suggested_code` 中包含这些内容。** 此时 `line` 字段应指向要删除的**结束行号**，如果删除多行，`start_line` 应指向要删除的**起始行号**。
+                        * **单行删除示例：** 要删除 `private String oldField;` （在第 10 行），则 `line` 为 `10`，`start_line` 不提供，`suggested_code` 的值应为：`""`。
+                        * **多行删除示例：** 要删除第 10-12 行代码（包含 `oldField1`, `oldField2`, `oldField3`），则 `start_line` 为 `10`，`line` 为 `12`，`suggested_code` 的值应为：`""`。
+                    * **B. 添加或修改单行：** 如果建议是添加或修改单行代码，则 `suggested_code` 字段的值必须是**替换后的最终单行代码内容**，`start_line` 不提供，`line` 指向该行。
+                        * 示例：将第 5 行 `private long id;` 修改为 `public Long id;`，则 `line` 为 `5`，`start_line` 不提供，`suggested_code` 的值应为：`"    public Long id;"`。
+                    * **C. 添加或修改多行：** 如果建议是添加或修改多行代码，则 `suggested_code` 字段的值必须是**替换后的最终多行代码内容**，`start_line` 指向起始行号，`line` 指向结束行号。
+                        * 示例：将第 5-6 行替换为 `String new1;\nString new2;`，则 `start_line` 为 `5`，`line` 为 `6`，`suggested_code` 的值应为：`"    String new1;\\n    String new2;"`。
                     
                     **极其重要：此字段的字符串值内部的任何双引号 `"` 或反斜杠 `\` 都必须严格进行 JSON 转义 (`\"` 或 `\\`)，并且换行符必须使用 `\n` 来表示，以确保整个 JSON 字符串的有效性。**
             
@@ -347,24 +350,34 @@ jobs:
                   // The body will always contain the ```suggestion wrapper, potentially empty for deletions
                   commentBody = `${escapeForTemplateLiteral(fix.description)}\n\n\`\`\`suggestion\n${preparedSuggestedCode}\n\`\`\``; 
                   
-                  // Print inline comment payload for debugging
-                  const inlineCommentPayload = {
+                  // Construct parameters for createReviewComment based on start_line presence
+                  const commentParams = {
                     ...context.repo,
                     pull_number: prNumber,
                     commit_id: headSha,
-                    path: escapeForTemplateLiteral(fix.file), // Escape path for logging/safety
-                    line: parseInt(fix.line, 10),
+                    path: fix.file, 
+                    line: parseInt(fix.line, 10), // This is the end line
                     side: 'RIGHT',
                     body: commentBody
                   };
-                  console.log('Inline Comment Payload:', JSON.stringify(inlineCommentPayload, null, 2)); 
+
+                  if (fix.start_line !== undefined && fix.start_line !== null && parseInt(fix.start_line, 10) !== parseInt(fix.line, 10)) {
+                      commentParams.start_line = parseInt(fix.start_line, 10);
+                      commentParams.start_side = 'RIGHT'; // Always on the right side of the diff
+                  }
+
+                  // Print inline comment payload for debugging
+                  console.log('Inline Comment Payload:', JSON.stringify(commentParams, null, 2)); 
                   
+                  // Validate line numbers before calling API
                   const lineNumber = parseInt(fix.line, 10);
-                  if (isNaN(lineNumber)) {
-                      console.error(`Invalid line number for ${fix.file}: ${fix.line}`);
+                  const startLineNumber = fix.start_line !== undefined ? parseInt(fix.start_line, 10) : lineNumber; // If start_line not provided, it's a single line
+
+                  if (isNaN(lineNumber) || isNaN(startLineNumber) || (fix.start_line !== undefined && startLineNumber > lineNumber)) {
+                      console.error(`Invalid line numbers for ${fix.file}: start_line=${fix.start_line}, line=${fix.line}`);
                       // Fallback to a regular comment if line number is invalid
                       console.log(`--- Attempting to post fallback comment for invalid line number for ${escapeForTemplateLiteral(fix.file)}:${fix.line} ---`);
-                      const fallbackBody = `**注意：** 无法在 \`${escapeForTemplateLiteral(fix.file)}\` 第 ${fix.line} 行发布行内评论，因为行号无效。\n\n${escapeForTemplateLiteral(fix.description)}\n\n\`\`\`suggestion\n${preparedSuggestedCode}\n\`\`\`\n\n> 这通常是因为该行不在PR差异中或已被其他修改影响。`;
+                      const fallbackBody = `**注意：** 无法在 \`${escapeForTemplateLiteral(fix.file)}\` (起始行: ${fix.start_line || '未提供'}, 结束行: ${fix.line}) 发布行内评论，因为行号无效或范围不正确。\n\n${escapeForTemplateLiteral(fix.description)}\n\n\`\`\`suggestion\n${preparedSuggestedCode}\n\`\`\`\n\n> 这通常是因为该行或行范围不在PR差异中或已被其他修改影响。`;
                       console.log('Fallback Comment Body (Invalid Line):', JSON.stringify(fallbackBody)); 
                       await github.rest.issues.createComment({
                           ...context.repo,
@@ -375,22 +388,14 @@ jobs:
                   }
 
 
-                  await github.rest.pulls.createReviewComment({
-                    ...context.repo,
-                    pull_number: prNumber,
-                    commit_id: headSha,
-                    path: fix.file, // Path needs to be the original for API call
-                    line: lineNumber,
-                    side: 'RIGHT',
-                    body: commentBody // Use the already constructed and escaped commentBody
-                  });
+                  await github.rest.pulls.createReviewComment(commentParams);
                 } catch (error) {
                   console.error(`Failed to post review comment for ${fix.file}:${fix.line}:`, error);
                   
                   // Post fallback comment
                   try {
                     console.log(`--- Attempting to post fallback comment due to error for ${escapeForTemplateLiteral(fix.file)}:${fix.line} ---`);
-                    const fallbackBody = `**注意：** 无法在 \`${escapeForTemplateLiteral(fix.file)}\` 第 ${fix.line} 行发布行内评论。\n\n${escapeForTemplateLiteral(fix.description)}\n\n\`\`\`suggestion\n${preparedSuggestedCode}\n\`\`\`\n\n> 这通常是因为该行不在PR差异中或已被其他修改影响。`;
+                    const fallbackBody = `**注意：** 无法在 \`${escapeForTemplateLiteral(fix.file)}\` (起始行: ${fix.start_line || '未提供'}, 结束行: ${fix.line}) 发布行内评论。\n\n${escapeForTemplateLiteral(fix.description)}\n\n\`\`\`suggestion\n${preparedSuggestedCode}\n\`\`\`\n\n> 这通常是因为该行或行范围不在PR差异中或已被其他修改影响。`;
                     console.log('Fallback Comment Body (Error):', JSON.stringify(fallbackBody)); 
                     await github.rest.issues.createComment({
                       ...context.repo,
