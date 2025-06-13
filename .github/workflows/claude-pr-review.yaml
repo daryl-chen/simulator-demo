@@ -76,7 +76,7 @@ jobs:
                 * `start_line` (number, optional): 问题代码的**起始行号**。
                 * `line` (number): 问题代码的**结束行号**。**此行号至关重要：它必须是你的建议所针对的代码在 PR **修改后文件** 中**实际被修改、添加或删除**的行的精确**结束行号**。**务必选择包含实际代码的行，该代码与问题直接相关或需要被修改/删除。** 
                 * `description` (string): 确认的问题的简洁描述。
-                * `suggested_code` (string): 是建议修改的目标值（注意：不是diff，而是直接给出修改建议的目标代码）。包含修复建议的 Markdown 代码块。
+                * `suggested_code` (string): 修改后的值（注意：不是diff，而是直接给出修改的目标。比如：（1）删除某行/某几行代码，则目标值为空；（2）将 private long id; 修改为 public Long id; 则直接给出 public Long id;即可）。包含修复建议的 Markdown 代码块。
                     **你必须严格使用 ```suggestion 格式。注意：`suggested_code` 的 JSON 字符串值内部，只包含实际的**最终代码行内容**，不要包含 ```suggestion` 或 ``` 标记，也不要包含 `+`、`-` 或 ` ` (空格) 前缀。GitHub 会根据 `suggested_code` 的内容和 `line`/`start_line` 自动判断并渲染 diff。**
                     
                     **处理方式分为两种，请务必严格遵守：**
