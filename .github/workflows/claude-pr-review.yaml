@@ -84,6 +84,7 @@ jobs:
                         * **最终是：`\"suggested_code\": \"\"`。
                         * **即使被删除的行有内容，你也不应在 `suggested_code` 中包含这些内容。**
                         ** 示例：要删除 `private String oldField;` （在第 10 行），则 `line` 为 `10`，`start_line` 为10，`suggested_code` 的值应为：`""`。
+                        ** 示例：要删除 `\nprivate String oldField;`（在第9、10行，其中第9行是一个空行），则`line` 为 `10`，`start_line` 为9，`suggested_code` 的值应为：`""`。
                         ** 示例：要删除第 10-12 行代码（包含 `oldField1`, `oldField2`, `oldField3`），则 `start_line` 为 `10`，`line` 为 `12`，`suggested_code` 的值应为：`""`。
                     * **B. 添加或修改行：** 如果建议是添加或修改代码（包括删除部分并添加新内容），则 `suggested_code` 字段的值必须是**替换后的最终代码内容**，不带任何 `+`、`-` 或 ` ` (空格) 前缀。
                         * 示例 1：将 `private long id;` 修改为 `public Long id;`，则 `line` 为 `5`，`start_line` 为5，`suggested_code` 的值应为：`"    public Long id;"`。
