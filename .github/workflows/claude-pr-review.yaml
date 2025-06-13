@@ -66,26 +66,31 @@ jobs:
             
             2.  `low_confidence_issues` (array of objects):
                 * `file` (string): 相关的相对文件路径。
-                * `line` (number, optional): 问题的起始行号（在修改后的文件中）。
+                * `start_line` (number, optional): 问题的起始行号（在修改后的文件中）。**仅当问题涉及多行时提供此字段。**
+                * `line` (number): 问题的结束行号（在修改后的文件中）。**对于单行问题，此字段即为该行号；对于多行问题，此字段为结束行号。**
                 * `description` (string): 对问题的描述，解释你为什么怀疑它，指出潜在的风险或需要进一步人工确认的地方。
                 * `context_code` (string, optional): 相关的代码片段，仅用 **Markdown 代码块**包裹 (例如 ```go 或 ```javascript)。**极其重要：此字段的字符串值内部的任何双引号 `"` 或反斜杠 `\` 都必须严格进行 JSON 转义 (`\"` 或 `\\`)，并且换行符必须使用 `\n` 来表示，以确保整个 JSON 字符串的有效性。例如，如果你的代码片段是：`String msg = "Hello World";\nSystem.out.println(msg);`，那么 `context_code` 的值应为：`"```java\\nString msg = \\\"Hello World\\\";\\nSystem.out.println(msg);\\n```"`**
             
             3.  `high_confidence_fixes` (array of objects):
                 * `file` (string): 相关的相对文件路径。
-                * `line` (number): 建议修改的结束行号。**此行号至关重要：它必须是你的建议所针对的代码在 PR **修改后文件** 中**实际被修改、添加或删除**的行的**结束行号**。**务必选择第一个包含实际代码的行，该代码与问题直接相关或需要被修改/删除。** **严禁**指向空白行、注释行或与问题无关的行作为起始行号。**特别地，对于重复代码，请确保 `line` 指向重复代码的**最后一个实际声明行**，`start_line` 指向重复代码的**第一个实际声明行**。**如果该行或行范围在 PR 差异中没有被标记为添加、删除或修改，GitHub 将无法在此处放置行内评论。**
-                * `start_line` (number, optional): 建议修改的起始行号。**仅当建议涉及多行时提供此字段，此时 `line` 表示结束行。如果只建议单行修改，则此字段应省略。**
+                * `line` (number): 建议修改的**结束行号**。**此行号至关重要：它必须是你的建议所针对的代码在 PR **修改后文件** 中**实际被修改、添加或删除**的行的精确**结束行号**。**务必选择包含实际代码的行，该代码与问题直接相关或需要被修改/删除。** **严禁**指向空白行、注释行或与问题无关的行作为行号。
+                * `start_line` (number, optional): 建议修改的**起始行号**。**仅当建议涉及多行时提供此字段**（即 `start_line` 与 `line` 不同），此时 `line` 表示结束行。如果只建议单行修改，**此字段应省略**。**对于重复代码，`start_line` 必须指向重复代码的**第一个实际声明行**，`line` 必须指向重复代码的**最后一个实际声明行**。**如果该行或行范围在 PR 差异中没有被标记为添加、删除或修改，GitHub 将无法在此处放置行内评论。**
                 * `description` (string): 确认的问题的简洁描述。
                 * `suggested_code` (string): 包含修复建议的 Markdown 代码块。
                     **你必须严格使用 ```suggestion 格式。注意：`suggested_code` 的 JSON 字符串值内部，只包含实际的**最终代码行内容**，不要包含 ```suggestion` 或 ``` 标记，也不要包含 `+`、`-` 或 ` ` (空格) 前缀。GitHub 会根据 `suggested_code` 的内容和 `line`/`start_line` 自动判断并渲染 diff。**
                     
-                    **处理方式分为三种：**
-                    * **A. 仅删除行：** 如果建议是**删除一行或多行代码**，则 `suggested_code` 字段的值**必须且只能**是**空字符串 `\"\"`**。**这意味着，即使被删除的行有内容，你也不应在 `suggested_code` 中包含这些内容。** 此时 `line` 字段应指向要删除的**结束行号**，如果删除多行，`start_line` 应指向要删除的**起始行号**。
-                        * **单行删除示例：** 要删除 `private String oldField;` （在第 10 行），则 `line` 为 `10`，`start_line` 不提供，`suggested_code` 的值应为：`""`。
-                        * **多行删除示例：** 要删除第 10-12 行代码（包含 `oldField1`, `oldField2`, `oldField3`），则 `start_line` 为 `10`，`line` 为 `12`，`suggested_code` 的值应为：`""`。
-                    * **B. 添加或修改单行：** 如果建议是添加或修改单行代码，则 `suggested_code` 字段的值必须是**替换后的最终单行代码内容**，`start_line` 不提供，`line` 指向该行。
-                        * 示例：将第 5 行 `private long id;` 修改为 `public Long id;`，则 `line` 为 `5`，`start_line` 不提供，`suggested_code` 的值应为：`"    public Long id;"`。
-                    * **C. 添加或修改多行：** 如果建议是添加或修改多行代码，则 `suggested_code` 字段的值必须是**替换后的最终多行代码内容**，`start_line` 指向起始行号，`line` 指向结束行号。
-                        * 示例：将第 5-6 行替换为 `String new1;\nString new2;`，则 `start_line` 为 `5`，`line` 为 `6`，`suggested_code` 的值应为：`"    String new1;\\n    String new2;"`。
+                    **处理方式示例：**
+                    * **A. 仅删除单行：**
+                        * 要删除 `private String oldField;` （在第 10 行），则 `line` 为 `10`，`start_line` **不提供**，`suggested_code` 的值应为：`""`。
+                    * **B. 仅删除多行：**
+                        * 要删除第 10-12 行代码（例如 `oldField1`, `oldField2`, `oldField3`），则 `start_line` 为 `10`，`line` 为 `12`，`suggested_code` 的值应为：`""`。
+                    * **C. 添加或修改单行：**
+                        * 将第 5 行 `private long id;` 修改为 `public Long id;`，则 `line` 为 `5`，`start_line` **不提供**，`suggested_code` 的值应为：`"    public Long id;"`。
+                    * **D. 添加或修改多行：**
+                        * 将第 5-6 行替换为 `String new1;\nString new2;`，则 `start_line` 为 `5`，`line` 为 `6`，`suggested_code` 的值应为：`"    String new1;\\n    String new2;"`。
+                    * **E. 修复重复代码（删除一个重复项）：**
+                        * 假设代码中有两行 `private String namesrvAddr;`，分别在第 10 行和第 12 行，要删除第 12 行的重复项。则 `line` 为 `12`，`start_line` **不提供**，`suggested_code` 的值应为：`""`。
+                        * **如果两个重复项都在修改范围内（例如 10-12 行重复，只保留一个），请指向第一个重复项的开始行和最后一个重复项的结束行。** 例如，删除 10-12 行的重复内容（保留第 10 行），则 `start_line` 为 `11`，`line` 为 `12`，`suggested_code` 为 `""`。
                     
                     **极其重要：此字段的字符串值内部的任何双引号 `"` 或反斜杠 `\` 都必须严格进行 JSON 转义 (`\"` 或 `\\`)，并且换行符必须使用 `\n` 来表示，以确保整个 JSON 字符串的有效性。**
             
@@ -286,12 +291,10 @@ jobs:
                 // Build location string with Markdown backticks for file path
                 let locationString = '';
                 if (issue.file) {
-                    // Escape file content for template literal safety
-                    locationString = ` (\`${escapeForTemplateLiteral(issue.file)}\``;
-                    if (issue.line) {
-                        locationString += ` 第 ${issue.line} 行`;
-                    }
-                    locationString += `)`;
+                    // Start_line or single line: use line. Multi-line: use start_line to line
+                    const startLine = issue.start_line !== undefined ? ` (起始行: ${issue.start_line}` : '';
+                    const endLine = issue.start_line !== undefined ? `, 结束行: ${issue.line})` : ` (行: ${issue.line})`;
+                    locationString = ` (\`${escapeForTemplateLiteral(issue.file)}\`${startLine}${endLine})`;
                 }
                 // Escape description for template literal safety
                 mainComment += `### ${escapeForTemplateLiteral(issue.description)}${locationString}\n\n`;
